@@ -232,3 +232,20 @@ func TestComposedStateItem_Update(t *testing.T) {
 		t.Errorf("actions resulted in %v, want %v", performedActions, wanted)
 	}
 }
+
+func TestStringStateItem_IsSame(t *testing.T) {
+	ssi1 := &StringStateItem{IdValue: "test-1", Value: "v1"}
+	ssi1Copy := &StringStateItem{IdValue: "test-1", Value: "v1"}
+	ssi2 := &StringStateItem{IdValue: "test-2", Value: "v1"}
+	ssi2Changed := &StringStateItem{IdValue: "test-2", Value: "v2"}
+
+	if !ssi1.IsSame(ssi1Copy) {
+		t.Errorf("%s should be the same as %s", ssi1, ssi1Copy)
+	}
+	if ssi1.IsSame(ssi2) {
+		t.Errorf("%s should not be the same as %s", ssi1, ssi2)
+	}
+	if ssi1.IsSame(ssi2Changed) {
+		t.Errorf("%s should not be the same as %s", ssi1, ssi2Changed)
+	}
+}

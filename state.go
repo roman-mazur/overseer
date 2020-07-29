@@ -2,27 +2,6 @@ package overseer // import rmazur.io/overseer
 
 import "fmt"
 
-type Application struct {
-	Id   string
-	Name string
-}
-
-type ServiceState int
-
-const (
-	ServiceStateStarted ServiceState = iota
-	ServiceStateStopped
-)
-
-type Service struct {
-	Name  string
-	State ServiceState
-}
-
-type Definitions struct {
-	Apps []*Application
-}
-
 type Action func() error
 
 type Actionable interface {
@@ -75,6 +54,25 @@ func mapState(items []StateItem) map[string]StateItem {
 		itemsMap[item.Id()] = item
 	}
 	return itemsMap
+}
+
+type StringStateItem struct {
+	Actionable
+
+	IdValue string
+	Value string
+}
+
+func (ssi *StringStateItem) Id() string {
+	return ssi.IdValue
+}
+
+func (ssi *StringStateItem) IsSame(another StateItem) bool {
+	if assi, ok := another.(*StringStateItem); ok {
+		return ssi.IdValue == assi.IdValue && ssi.Value == assi.Value
+	} else {
+		return false
+	}
 }
 
 type ComposedStateItem struct {
