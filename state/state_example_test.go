@@ -1,8 +1,10 @@
-package state
+package state_test
 
 import (
 	"context"
 	"fmt"
+
+	"rmazur.io/overseer/state"
 )
 
 type Desk struct {
@@ -14,7 +16,7 @@ func (d *Desk) Id() string {
 	return fmt.Sprintf("desk-%d", d.Number)
 }
 
-func (d *Desk) IsSame(other StateItem) bool {
+func (d *Desk) IsSame(other state.StateItem) bool {
 	if otherDesk, ok := other.(*Desk); ok {
 		return otherDesk.Number == d.Number && otherDesk.Color == d.Color
 	} else {
@@ -36,58 +38,58 @@ func (d *Desk) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (d *Desk) Update(ctx context.Context, from Actionable) error {
+func (d *Desk) Update(ctx context.Context, from state.Actionable) error {
 	fmt.Println("update from", from, "to", d)
 	return nil
 }
 
-type Room struct {
+type HouseRoom struct {
 	Number int
 	Name   string
 	Desks  []*Desk
 }
 
-func (r *Room) String() string {
+func (r *HouseRoom) String() string {
 	return fmt.Sprintf("room-%d/%s", r.Number, r.Name)
 }
 
-func (r *Room) Remove(ctx context.Context) error {
+func (r *HouseRoom) Remove(ctx context.Context) error {
 	fmt.Println("remove", r)
 	return nil
 }
 
-func (r *Room) Create(ctx context.Context) error {
+func (r *HouseRoom) Create(ctx context.Context) error {
 	fmt.Println("create", r)
 	return nil
 }
 
-func (r *Room) Update(ctx context.Context, from Actionable) error {
+func (r *HouseRoom) Update(ctx context.Context, from state.Actionable) error {
 	fmt.Println("update from", from, "to", r)
 	return nil
 }
 
-func (r *Room) AsState() StateItem {
-	parts := make([]StateItem, len(r.Desks)+1)
+func (r *HouseRoom) AsState() state.StateItem {
+	parts := make([]state.StateItem, len(r.Desks)+1)
 	for i := range r.Desks {
 		parts[i] = r.Desks[i]
 	}
 	id := fmt.Sprintf("room-%d", r.Number)
-	parts[len(parts)-1] = &StringStateItem{IdValue: fmt.Sprintf("%s-name", id), Value: r.Name, Actionable: r}
-	return ComposedStateItem{
+	parts[len(parts)-1] = &state.StringStateItem{IdValue: fmt.Sprintf("%s-name", id), Value: r.Name, Actionable: r}
+	return state.ComposedStateItem{
 		IdValue: id,
 		Parts:   parts,
 	}
 }
 
 func ExampleInferActions() {
-	officeRoom := &Room{
+	officeRoom := &HouseRoom{
 		Number: 1,
 		Name:   "Office",
 		Desks: []*Desk{
 			{Number: 42, Color: "brown"},
 		},
 	}
-	livingRoom := &Room{
+	livingRoom := &HouseRoom{
 		Number: 2,
 		Name:   "Living",
 		Desks: []*Desk{
@@ -95,7 +97,7 @@ func ExampleInferActions() {
 		},
 	}
 
-	officeRoomRecolored := &Room{
+	officeRoomRecolored := &HouseRoom{
 		Number: 1,
 		Name:   "Office",
 		Desks: []*Desk{
@@ -106,23 +108,23 @@ func ExampleInferActions() {
 	ctx := context.Background()
 
 	fmt.Println(">> color change")
-	actions := InferActions(
-		[]StateItem{officeRoom.AsState(), livingRoom.AsState()},
-		[]StateItem{officeRoomRecolored.AsState(), livingRoom.AsState()},
+	actions := state.InferActions(
+		[]state.StateItem{officeRoom.AsState(), livingRoom.AsState()},
+		[]state.StateItem{officeRoomRecolored.AsState(), livingRoom.AsState()},
 	)
 	for _, act := range actions {
 		_ = act(ctx)
 	}
 
-	bedroom := &Room{
+	bedroom := &HouseRoom{
 		Number: 3,
 		Name:   "Bedroom",
 	}
 
 	fmt.Println(">> structure change")
-	actions = InferActions(
-		[]StateItem{officeRoom.AsState(), livingRoom.AsState()},
-		[]StateItem{livingRoom.AsState(), bedroom.AsState()},
+	actions = state.InferActions(
+		[]state.StateItem{officeRoom.AsState(), livingRoom.AsState()},
+		[]state.StateItem{livingRoom.AsState(), bedroom.AsState()},
 	)
 	for _, act := range actions {
 		_ = act(ctx)
