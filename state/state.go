@@ -1,6 +1,8 @@
-package overseer // import rmazur.io/overseer
+package state // import rmazur.io/overseer/state
 
-import "fmt"
+import (
+	"fmt"
+)
 
 type Action func() error
 
@@ -60,7 +62,7 @@ type StringStateItem struct {
 	Actionable
 
 	IdValue string
-	Value string
+	Value   string
 }
 
 func (ssi *StringStateItem) Id() string {

@@ -1,10 +1,10 @@
-package overseer
+package state
 
 import "fmt"
 
 type Desk struct {
 	Number int
-	Color string
+	Color  string
 }
 
 func (d *Desk) Id() string {
@@ -40,8 +40,8 @@ func (d *Desk) Update(from Actionable) error {
 
 type Room struct {
 	Number int
-	Name string
-	Desks []*Desk
+	Name   string
+	Desks  []*Desk
 }
 
 func (r *Room) String() string {
@@ -79,14 +79,14 @@ func (r *Room) AsState() StateItem {
 func ExampleInferActions() {
 	officeRoom := &Room{
 		Number: 1,
-		Name: "Office",
+		Name:   "Office",
 		Desks: []*Desk{
 			{Number: 42, Color: "brown"},
 		},
 	}
 	livingRoom := &Room{
 		Number: 2,
-		Name: "Living",
+		Name:   "Living",
 		Desks: []*Desk{
 			{Number: 42, Color: "blue"},
 		},
@@ -94,7 +94,7 @@ func ExampleInferActions() {
 
 	officeRoomRecolored := &Room{
 		Number: 1,
-		Name: "Office",
+		Name:   "Office",
 		Desks: []*Desk{
 			{Number: 42, Color: "green"},
 		},
@@ -105,13 +105,13 @@ func ExampleInferActions() {
 		[]StateItem{officeRoom.AsState(), livingRoom.AsState()},
 		[]StateItem{officeRoomRecolored.AsState(), livingRoom.AsState()},
 	)
-	for _, act := range actions	{
+	for _, act := range actions {
 		_ = act()
 	}
 
 	bedroom := &Room{
 		Number: 3,
-		Name: "Bedroom",
+		Name:   "Bedroom",
 	}
 
 	fmt.Println(">> structure change")
@@ -119,7 +119,7 @@ func ExampleInferActions() {
 		[]StateItem{officeRoom.AsState(), livingRoom.AsState()},
 		[]StateItem{livingRoom.AsState(), bedroom.AsState()},
 	)
-	for _, act := range actions	{
+	for _, act := range actions {
 		_ = act()
 	}
 
