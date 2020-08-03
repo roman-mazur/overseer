@@ -1,15 +1,16 @@
 package state // import rmazur.io/overseer/state
 
 import (
+	"context"
 	"fmt"
 )
 
-type Action func() error
+type Action func(ctx context.Context) error
 
 type Actionable interface {
-	Create() error
-	Remove() error
-	Update(from Actionable) error
+	Create(ctx context.Context) error
+	Remove(ctx context.Context) error
+	Update(ctx context.Context, from Actionable) error
 }
 
 type StateItem interface {
@@ -29,7 +30,9 @@ func InferActions(prev []StateItem, next []StateItem) []Action {
 			if !nextItem.IsSame(prevItem) {
 				nextItem := nextItem
 				prevItem := prevItem
-				updateActions = append(updateActions, func() error { return nextItem.Update(prevItem) })
+				updateActions = append(updateActions, func(ctx context.Context) error {
+					return nextItem.Update(ctx, prevItem)
+				})
 			}
 			delete(nextState, prevItem.Id())
 		} else {
@@ -106,32 +109,32 @@ func (csi ComposedStateItem) IsSame(another StateItem) bool {
 	}
 }
 
-func (csi ComposedStateItem) Create() error {
+func (csi ComposedStateItem) Create(ctx context.Context) error {
 	for _, part := range csi.Parts {
-		if err := part.Create(); err != nil {
+		if err := part.Create(ctx); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (csi ComposedStateItem) Remove() error {
+func (csi ComposedStateItem) Remove(ctx context.Context) error {
 	for _, part := range csi.Parts {
-		if err := part.Remove(); err != nil {
+		if err := part.Remove(ctx); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (csi ComposedStateItem) Update(from Actionable) error {
+func (csi ComposedStateItem) Update(ctx context.Context, from Actionable) error {
 	fromCsi, ok := from.(ComposedStateItem)
 	if !ok {
 		panic(fmt.Errorf("bad composition: %s is not a ComposedStateItem", from))
 	}
 	actions := InferActions(fromCsi.Parts, csi.Parts)
 	for _, act := range actions {
-		if err := act(); err != nil {
+		if err := act(ctx); err != nil {
 			return err
 		}
 	}

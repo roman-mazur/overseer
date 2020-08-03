@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -32,17 +33,17 @@ func (tsi testStateItem) record(str string) {
 	*tsi.recorder = append(*tsi.recorder, str)
 }
 
-func (tsi testStateItem) Create() error {
+func (tsi testStateItem) Create(ctx context.Context) error {
 	tsi.record(fmt.Sprintf("create %s with %s", tsi.id, tsi.arg))
 	return nil
 }
 
-func (tsi testStateItem) Remove() error {
+func (tsi testStateItem) Remove(ctx context.Context) error {
 	tsi.record(fmt.Sprintf("remove %s with %s", tsi.id, tsi.arg))
 	return nil
 }
 
-func (tsi testStateItem) Update(from Actionable) error {
+func (tsi testStateItem) Update(ctx context.Context, from Actionable) error {
 	tsi.record(fmt.Sprintf("update %s with %s from %s", tsi.id, tsi.arg, from))
 	return nil
 }
@@ -128,7 +129,7 @@ func TestInferActions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			actions := InferActions(prev, next)
 			for _, act := range actions {
-				if err := act(); err != nil {
+				if err := act(context.TODO()); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -144,7 +145,7 @@ func TestComposedStateItem_Create(t *testing.T) {
 	csi := ComposedStateItem{IdValue: "csi1", Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
-	if err := csi.Create(); err != nil {
+	if err := csi.Create(context.TODO()); err != nil {
 		t.Fatal(err)
 	}
 	wanted := []string{"create 1 with a", "create 2 with b"}
@@ -158,7 +159,7 @@ func TestComposedStateItem_Remove(t *testing.T) {
 	csi := ComposedStateItem{IdValue: "csi1", Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
-	if err := csi.Remove(); err != nil {
+	if err := csi.Remove(context.TODO()); err != nil {
 		t.Fatal(err)
 	}
 	wanted := []string{"remove 1 with a", "remove 2 with b"}
@@ -212,7 +213,7 @@ func TestComposedStateItem_Update(t *testing.T) {
 	csi1Changed := ComposedStateItem{IdValue: "csi1", Parts: stateItems([]testInput{
 		{id: "2", arg: "a"}, {id: "1", arg: "b"},
 	}, &performedActions)}
-	if err := csi1Changed.Update(csi1); err != nil {
+	if err := csi1Changed.Update(context.TODO(), csi1); err != nil {
 		t.Fatal(err)
 	}
 	wanted := []string{"update 1 with b from 1/a", "update 2 with a from 2/b"}
@@ -224,7 +225,7 @@ func TestComposedStateItem_Update(t *testing.T) {
 	csi1Changed2 := ComposedStateItem{IdValue: "csi1", Parts: stateItems([]testInput{
 		{id: "1", arg: "a"},
 	}, &performedActions)}
-	if err := csi1Changed2.Update(csi1); err != nil {
+	if err := csi1Changed2.Update(context.TODO(), csi1); err != nil {
 		t.Fatal(err)
 	}
 	wanted = []string{"remove 2 with b"}

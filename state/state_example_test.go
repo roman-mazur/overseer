@@ -1,6 +1,9 @@
 package state
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 type Desk struct {
 	Number int
@@ -23,17 +26,17 @@ func (d *Desk) String() string {
 	return fmt.Sprintf("%s/%s", d.Id(), d.Color)
 }
 
-func (d *Desk) Create() error {
+func (d *Desk) Create(ctx context.Context) error {
 	fmt.Println("create", d)
 	return nil
 }
 
-func (d *Desk) Remove() error {
+func (d *Desk) Remove(ctx context.Context) error {
 	fmt.Println("remove", d)
 	return nil
 }
 
-func (d *Desk) Update(from Actionable) error {
+func (d *Desk) Update(ctx context.Context, from Actionable) error {
 	fmt.Println("update from", from, "to", d)
 	return nil
 }
@@ -48,17 +51,17 @@ func (r *Room) String() string {
 	return fmt.Sprintf("room-%d/%s", r.Number, r.Name)
 }
 
-func (r *Room) Remove() error {
+func (r *Room) Remove(ctx context.Context) error {
 	fmt.Println("remove", r)
 	return nil
 }
 
-func (r *Room) Create() error {
+func (r *Room) Create(ctx context.Context) error {
 	fmt.Println("create", r)
 	return nil
 }
 
-func (r *Room) Update(from Actionable) error {
+func (r *Room) Update(ctx context.Context, from Actionable) error {
 	fmt.Println("update from", from, "to", r)
 	return nil
 }
@@ -100,13 +103,15 @@ func ExampleInferActions() {
 		},
 	}
 
+	ctx := context.Background()
+
 	fmt.Println(">> color change")
 	actions := InferActions(
 		[]StateItem{officeRoom.AsState(), livingRoom.AsState()},
 		[]StateItem{officeRoomRecolored.AsState(), livingRoom.AsState()},
 	)
 	for _, act := range actions {
-		_ = act()
+		_ = act(ctx)
 	}
 
 	bedroom := &Room{
@@ -120,7 +125,7 @@ func ExampleInferActions() {
 		[]StateItem{livingRoom.AsState(), bedroom.AsState()},
 	)
 	for _, act := range actions {
-		_ = act()
+		_ = act(ctx)
 	}
 
 	// Output:
