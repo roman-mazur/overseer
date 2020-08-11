@@ -76,7 +76,7 @@ func (r *HouseRoom) AsState() state.StateItem {
 	id := fmt.Sprintf("room-%d", r.Number)
 	parts[len(parts)-1] = &state.StringStateItem{IdValue: fmt.Sprintf("%s-name", id), Value: r.Name, Actionable: r}
 	return state.ComposedStateItem{
-		IdValue: id,
+		IdValue: state.StringId(id),
 		Parts:   parts,
 	}
 }

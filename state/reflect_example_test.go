@@ -17,6 +17,7 @@ const (
 
 type Space struct {
 	Color Color
+	Area  float32
 }
 
 func (space Space) Repaint(ctx context.Context, prev Color) error {
@@ -24,14 +25,20 @@ func (space Space) Repaint(ctx context.Context, prev Color) error {
 	return nil
 }
 
-type House struct {
-	Space
-	Id       string `state:"id"`
-	Bedrooms []*Room
-	Address  string
+func (space Space) Resize(ctx context.Context, prev float32) error {
+	fmt.Println("Resizing from", prev, "to", space.Area)
+	return nil
 }
 
-func (h *House) Move(ctx context.Context, prevAddress string) error {
+type MobileHouse struct {
+	Space
+	Id         string `state:"id"`
+	Bedrooms   []*Room
+	Address    string
+	HasTenants bool `state:"-"`
+}
+
+func (h *MobileHouse) Move(ctx context.Context, prevAddress string) error {
 	fmt.Printf("Moving %s from %s to %s\n", h.Id, prevAddress, h.Address)
 	return nil
 }
@@ -42,11 +49,11 @@ type Room struct {
 }
 
 func ExampleBuildStateItems() {
-	blueSpace := Space{ColorBlue}
-	redSpace := Space{ColorRed}
-	whiteSpace := Space{ColorWhite}
+	blueSpace := Space{ColorBlue, 1}
+	redSpace := Space{ColorRed, 1}
+	whiteSpace := Space{ColorWhite, 2}
 
-	state1, err := state.BuildStateItems(&House{
+	state1, err := state.BuildStateItems(&MobileHouse{
 		Space:   blueSpace,
 		Id:      "house A",
 		Address: "5 Cherry lane",
@@ -54,12 +61,13 @@ func ExampleBuildStateItems() {
 			{Name: "bedroom 0", Space: blueSpace},
 			{Name: "bedroom 1", Space: whiteSpace},
 		},
+		HasTenants: false,
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	state2, err := state.BuildStateItems(&House{
+	state2, err := state.BuildStateItems(&MobileHouse{
 		Space:   redSpace,
 		Id:      "house A",
 		Address: "5 Bazhana ave.",
@@ -67,6 +75,7 @@ func ExampleBuildStateItems() {
 			{Name: "bedroom 1", Space: blueSpace},
 			{Name: "bedroom 2", Space: redSpace},
 		},
+		HasTenants: true,
 	})
 	if err != nil {
 		panic(err)
@@ -83,5 +92,6 @@ func ExampleBuildStateItems() {
 	// Moving house A from 5 Cherry lane to 5 Bazhana ave.
 	// Removing bedroom 0
 	// Repainting from white to blue
+	// Resizing from 2 to 1
 	// Adding bedroom 1
 }

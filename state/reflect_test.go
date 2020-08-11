@@ -3,8 +3,16 @@ package state
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func makeValueStateItem(id string, value interface{}) valueStateItem {
+	return valueStateItem{
+		valueId: &valueId{parts: strings.Split(id, "/")},
+		value:   reflect.ValueOf(value),
+	}
+}
 
 func TestBuildStateItems(t *testing.T) {
 	testStruct := struct {
@@ -15,21 +23,18 @@ func TestBuildStateItems(t *testing.T) {
 	}{"a", 42, true, "internal"}
 
 	structState := []StateItem{
-		valueStateItem{valueId: "/A", value: reflect.ValueOf("a")},
-		valueStateItem{valueId: "/B", value: reflect.ValueOf(42)},
-		valueStateItem{valueId: "/C", value: reflect.ValueOf(true)},
+		makeValueStateItem("/A", "a"),
+		makeValueStateItem("/B", 42),
+		makeValueStateItem("/C", true),
 	}
 
-	mapState := append(structState, valueStateItem{
-		valueId: "/d", value: reflect.ValueOf(5.5),
-	})
+	mapState := append(structState, makeValueStateItem("/d", 5.5))
 
 	indexedStructState := func(k int) []StateItem {
 		res := make([]StateItem, len(structState))
 		for i := range res {
 			item := structState[i].(valueStateItem)
-			item.valueId = fmt.Sprintf("/%d%s", k, item.valueId)
-			res[i] = item
+			res[i] = makeValueStateItem(fmt.Sprintf("/%d%s", k, item.valueId), item.value.Interface())
 		}
 		return res
 	}
@@ -64,7 +69,7 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "slice",
 			input: []string{"a"},
 			want: []StateItem{
-				valueStateItem{valueId: "/0", value: reflect.ValueOf("a")},
+				makeValueStateItem("/0", "a"),
 			},
 			wantErr: false,
 		},
@@ -72,8 +77,8 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "array",
 			input: [2]string{"abc", "d"},
 			want: []StateItem{
-				valueStateItem{valueId: "/0", value: reflect.ValueOf("abc")},
-				valueStateItem{valueId: "/1", value: reflect.ValueOf("d")},
+				makeValueStateItem("/0", "abc"),
+				makeValueStateItem("/1", "d"),
 			},
 			wantErr: false,
 		},
@@ -81,8 +86,8 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "slice of structs",
 			input: []interface{}{&testStruct, &testStruct},
 			want: []StateItem{
-				ComposedStateItem{"/0", indexedStructState(0)},
-				ComposedStateItem{"/1", indexedStructState(1)},
+				ComposedStateItem{StringId("/0"), indexedStructState(0)},
+				ComposedStateItem{StringId("/1"), indexedStructState(1)},
 			},
 			wantErr: false,
 		},
@@ -94,9 +99,39 @@ func TestBuildStateItems(t *testing.T) {
 				t.Errorf("BuildStateItems() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !(ComposedStateItem{Parts: got}).IsSame(ComposedStateItem{Parts: tt.want}) {
+			if !(ComposedStateItem{IdValue: StringId(""), Parts: got}).IsSame(ComposedStateItem{IdValue: StringId(""), Parts: tt.want}) {
 				t.Errorf("BuildStateItems() got = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuildStateItems_IdTag(t *testing.T) {
+	type data struct {
+		Id string `state:"id"`
+
+		Value     int
+		BoolValue bool
+
+		Ignore1 string `state:"-"`
+		ignore2 string
+	}
+
+	items, err := BuildStateItems(&data{"id1", 42, true, "", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(items) < 2 {
+		t.Fatalf("Unexpected count of items: %d", len(items))
+	} else if len(items) != 2 {
+		t.Errorf("Unexpected count of items: %d", len(items))
+	}
+
+	if items[0].Id() != "/id1/Value" {
+		t.Errorf("Unexpected IDs in the items: %s", items)
+	}
+	if items[1].Id() != "/id1/BoolValue" {
+		t.Errorf("Unexpected IDs in the items: %s", items)
 	}
 }

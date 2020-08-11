@@ -80,13 +80,23 @@ func (ssi *StringStateItem) IsSame(another StateItem) bool {
 	}
 }
 
+type ItemId interface {
+	String() string
+}
+
+type StringId string
+
+func (sid StringId) String() string {
+	return string(sid)
+}
+
 type ComposedStateItem struct {
-	IdValue string
+	IdValue ItemId
 	Parts   []StateItem
 }
 
 func (csi ComposedStateItem) Id() string {
-	return csi.IdValue
+	return csi.IdValue.String()
 }
 
 func (csi ComposedStateItem) IsSame(another StateItem) bool {
