@@ -95,6 +95,7 @@ func (sid StringId) String() string {
 type ComposedItem struct {
 	IdValue ItemId
 	Parts   []Item
+	Actions Actionable
 }
 
 func (csi ComposedItem) Id() string {
@@ -102,6 +103,9 @@ func (csi ComposedItem) Id() string {
 }
 
 func (csi ComposedItem) IsSame(another Item) bool {
+	if another == nil {
+		panic(csi.Id() + " is being compared to nil")
+	}
 	if another.Id() != csi.Id() {
 		return false
 	}
@@ -122,6 +126,12 @@ func (csi ComposedItem) IsSame(another Item) bool {
 }
 
 func (csi ComposedItem) Create(ctx context.Context) error {
+	if csi.Actions != nil {
+		err := csi.Actions.Create(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	for _, part := range csi.Parts {
 		if err := part.Create(ctx); err != nil {
 			return err
@@ -136,6 +146,9 @@ func (csi ComposedItem) Remove(ctx context.Context) error {
 			return err
 		}
 	}
+	if csi.Actions != nil {
+		return csi.Actions.Remove(ctx)
+	}
 	return nil
 }
 
@@ -149,6 +162,9 @@ func (csi ComposedItem) Update(ctx context.Context, from Actionable) error {
 		if err := act(ctx); err != nil {
 			return err
 		}
+	}
+	if csi.Actions != nil {
+		return csi.Actions.Update(ctx, from)
 	}
 	return nil
 }

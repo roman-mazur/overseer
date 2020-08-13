@@ -4,13 +4,25 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 )
 
+type recorder []string
+
+func (r *recorder) record(msg string) {
+	*r = append(*r, msg)
+}
+
+func (r recorder) String() string {
+	return "\n" + strings.Join(r, "\n") + "\n"
+}
+
 type testStateItem struct {
-	id       string
-	arg      string
-	recorder *[]string
+	id  string
+	arg string
+
+	*recorder
 }
 
 func (tsi testStateItem) Id() string {
@@ -27,10 +39,6 @@ func (tsi testStateItem) IsSame(another Item) bool {
 	} else {
 		return false
 	}
-}
-
-func (tsi testStateItem) record(str string) {
-	*tsi.recorder = append(*tsi.recorder, str)
 }
 
 func (tsi testStateItem) Create(ctx context.Context) error {
@@ -53,7 +61,7 @@ type testInput struct {
 	arg string
 }
 
-func stateItems(input []testInput, recorder *[]string) []Item {
+func stateItems(input []testInput, recorder *recorder) []Item {
 	res := make([]Item, len(input))
 	for i, in := range input {
 		res[i] = testStateItem{id: in.id, arg: in.arg, recorder: recorder}
@@ -69,7 +77,7 @@ func TestInferActions(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []string
+		want recorder
 	}{
 		{
 			name: "create one",
@@ -77,7 +85,7 @@ func TestInferActions(t *testing.T) {
 				prev: nil,
 				next: []testInput{{"1", "a"}},
 			},
-			want: []string{"create 1 with a"},
+			want: recorder{"create 1 with a"},
 		},
 		{
 			name: "delete one",
@@ -85,7 +93,7 @@ func TestInferActions(t *testing.T) {
 				prev: []testInput{{"1", "a"}},
 				next: nil,
 			},
-			want: []string{"remove 1 with a"},
+			want: recorder{"remove 1 with a"},
 		},
 		{
 			name: "create and delete",
@@ -93,7 +101,7 @@ func TestInferActions(t *testing.T) {
 				prev: []testInput{{"1", "a"}},
 				next: []testInput{{"2", "b"}},
 			},
-			want: []string{"remove 1 with a", "create 2 with b"},
+			want: recorder{"remove 1 with a", "create 2 with b"},
 		},
 		{
 			name: "noop",
@@ -109,7 +117,7 @@ func TestInferActions(t *testing.T) {
 				prev: []testInput{{"1", "a"}, {"2", "b"}},
 				next: []testInput{{"2", "c"}, {"1", "a"}},
 			},
-			want: []string{"update 2 with c from 2/b"},
+			want: recorder{"update 2 with c from 2/b"},
 		},
 		{
 			name: "order: remove, update, create",
@@ -117,12 +125,12 @@ func TestInferActions(t *testing.T) {
 				prev: []testInput{{"1", "a"}, {"2", "b"}},
 				next: []testInput{{"2", "c"}, {"3", "a"}},
 			},
-			want: []string{"remove 1 with a", "update 2 with c from 2/b", "create 3 with a"},
+			want: recorder{"remove 1 with a", "update 2 with c from 2/b", "create 3 with a"},
 		},
 	}
 
 	for _, tt := range tests {
-		var performedActions []string
+		var performedActions recorder
 
 		prev := stateItems(tt.args.prev, &performedActions)
 		next := stateItems(tt.args.next, &performedActions)
@@ -141,28 +149,28 @@ func TestInferActions(t *testing.T) {
 }
 
 func TestComposedStateItem_Create(t *testing.T) {
-	var performedActions []string
+	var performedActions recorder
 	csi := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
 	if err := csi.Create(context.TODO()); err != nil {
 		t.Fatal(err)
 	}
-	wanted := []string{"create 1 with a", "create 2 with b"}
+	wanted := recorder{"create 1 with a", "create 2 with b"}
 	if !reflect.DeepEqual(performedActions, wanted) {
 		t.Errorf("actions resulted in %v, want %v", performedActions, wanted)
 	}
 }
 
 func TestComposedStateItem_Remove(t *testing.T) {
-	var performedActions []string
+	var performedActions recorder
 	csi := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
 	if err := csi.Remove(context.TODO()); err != nil {
 		t.Fatal(err)
 	}
-	wanted := []string{"remove 1 with a", "remove 2 with b"}
+	wanted := recorder{"remove 1 with a", "remove 2 with b"}
 	if !reflect.DeepEqual(performedActions, wanted) {
 		t.Errorf("actions resulted in %v, want %v", performedActions, wanted)
 	}
@@ -206,7 +214,7 @@ func TestComposedStateItem_IsSame(t *testing.T) {
 }
 
 func TestComposedStateItem_Update(t *testing.T) {
-	var performedActions []string
+	var performedActions recorder
 	csi1 := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
@@ -216,7 +224,7 @@ func TestComposedStateItem_Update(t *testing.T) {
 	if err := csi1Changed.Update(context.TODO(), csi1); err != nil {
 		t.Fatal(err)
 	}
-	wanted := []string{"update 1 with b from 1/a", "update 2 with a from 2/b"}
+	wanted := recorder{"update 1 with b from 1/a", "update 2 with a from 2/b"}
 	if !reflect.DeepEqual(performedActions, wanted) {
 		t.Errorf("actions resulted in %v, want %v", performedActions, wanted)
 	}
@@ -228,7 +236,7 @@ func TestComposedStateItem_Update(t *testing.T) {
 	if err := csi1Changed2.Update(context.TODO(), csi1); err != nil {
 		t.Fatal(err)
 	}
-	wanted = []string{"remove 2 with b"}
+	wanted = recorder{"remove 2 with b"}
 	if !reflect.DeepEqual(performedActions, wanted) {
 		t.Errorf("actions resulted in %v, want %v", performedActions, wanted)
 	}
