@@ -51,7 +51,7 @@ func (tsi testStateItem) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (tsi testStateItem) Update(ctx context.Context, from Actionable) error {
+func (tsi testStateItem) Update(ctx context.Context, from interface{}) error {
 	tsi.record(fmt.Sprintf("update %s with %s from %s", tsi.id, tsi.arg, from))
 	return nil
 }

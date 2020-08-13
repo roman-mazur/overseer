@@ -10,10 +10,10 @@ type Action func(ctx context.Context) error
 type Actionable interface {
 	Create(ctx context.Context) error
 	Remove(ctx context.Context) error
-	Update(ctx context.Context, from Actionable) error
+	Update(ctx context.Context, from interface{}) error
 }
 
-type UpdateAction func(ctx context.Context, prev Actionable) error
+type UpdateAction func(ctx context.Context, prev interface{}) error
 
 type Item interface {
 	Actionable
@@ -93,9 +93,10 @@ func (sid StringId) String() string {
 }
 
 type ComposedItem struct {
-	IdValue ItemId
-	Parts   []Item
-	Actions Actionable
+	IdValue  ItemId
+	Parts    []Item
+	Actions  Actionable
+	Original interface{}
 }
 
 func (csi ComposedItem) Id() string {
@@ -110,6 +111,23 @@ func (csi ComposedItem) IsSame(another Item) bool {
 		return false
 	}
 	if acsi, ok := another.(ComposedItem); ok {
+		if csi.Actions != nil {
+			if acsi.Actions == nil {
+				return false
+			}
+			if item, ok := csi.Actions.(Item); ok {
+				if otherItem, ok := acsi.Actions.(Item); ok {
+					if !item.IsSame(otherItem) {
+						return false
+					}
+				} else {
+					return false
+				}
+			}
+		} else if acsi.Actions != nil {
+			return false
+		}
+
 		if len(acsi.Parts) != len(csi.Parts) {
 			return false
 		}
@@ -152,7 +170,7 @@ func (csi ComposedItem) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (csi ComposedItem) Update(ctx context.Context, from Actionable) error {
+func (csi ComposedItem) Update(ctx context.Context, from interface{}) error {
 	fromCsi, ok := from.(ComposedItem)
 	if !ok {
 		panic(fmt.Errorf("bad composition: %s is not a ComposedItem", from))
@@ -164,7 +182,15 @@ func (csi ComposedItem) Update(ctx context.Context, from Actionable) error {
 		}
 	}
 	if csi.Actions != nil {
-		return csi.Actions.Update(ctx, from)
+		prev := from
+		if fromCsi.Original != nil {
+			prev = fromCsi.Original
+		}
+		return csi.Actions.Update(ctx, prev)
 	}
 	return nil
+}
+
+func (csi ComposedItem) String() string {
+	return fmt.Sprint("{id:", csi.Id(), ", actions:", csi.Actions != nil, ", parts:", csi.Parts, "}")
 }

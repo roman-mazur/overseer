@@ -41,7 +41,7 @@ type valueStateItem struct {
 }
 
 func (vsi valueStateItem) String() string {
-	return fmt.Sprintf("id:%s value:[%s]", vsi.valueId, vsi.value.Type())
+	return fmt.Sprintf("{id:%s, value:%s}", vsi.valueId, vsi.value.Type())
 }
 
 func (vsi valueStateItem) Id() string {
@@ -58,9 +58,9 @@ func (vsi valueStateItem) IsSame(other Item) bool {
 
 type noAction struct{}
 
-func (na noAction) Create(context.Context) error             { return nil }
-func (na noAction) Remove(context.Context) error             { return nil }
-func (na noAction) Update(context.Context, Actionable) error { return nil }
+func (na noAction) Create(context.Context) error              { return nil }
+func (na noAction) Remove(context.Context) error              { return nil }
+func (na noAction) Update(context.Context, interface{}) error { return nil }
 
 var (
 	noop Actionable = noAction{}
@@ -102,7 +102,7 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 				return nil, err
 			}
 		}
-		return ComposedItem{id, parts, nil}, nil
+		return ComposedItem{id, parts, nil, nil}, nil
 
 	case reflect.Map:
 		parts := make([]Item, v.Len())
@@ -116,7 +116,7 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 			}
 			i++
 		}
-		return ComposedItem{id, parts, nil}, nil
+		return ComposedItem{id, parts, nil, nil}, nil
 
 	case reflect.Struct:
 		parts := make([]Item, 0, v.NumField())
@@ -146,7 +146,10 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 		if err != nil {
 			return nil, err
 		}
-		return ComposedItem{id, parts, act}, nil
+		if act == noop {
+			act = nil
+		}
+		return ComposedItem{id, parts, act, v.Interface()}, nil
 
 	default:
 		act, err := buildActionable(v)
@@ -193,7 +196,7 @@ func callAction(a Action, ctx context.Context) error {
 
 func (a actions) Create(ctx context.Context) error { return callAction(a.create, ctx) }
 func (a actions) Remove(ctx context.Context) error { return callAction(a.remove, ctx) }
-func (a actions) Update(ctx context.Context, prev Actionable) error {
+func (a actions) Update(ctx context.Context, prev interface{}) error {
 	if a.update == nil {
 		return nil
 	}
@@ -205,7 +208,7 @@ func (a actions) isNoop() bool {
 }
 
 var actionType = reflect.TypeOf(Action(nil))
-var updateActionType = reflect.TypeOf(Action(nil))
+var updateActionType = reflect.TypeOf(UpdateAction(nil))
 
 func actionWithMethod(target reflect.Value, name string) (Action, error) {
 	m := target.MethodByName(name)
@@ -225,17 +228,32 @@ func actionWithMethod(target reflect.Value, name string) (Action, error) {
 	}, nil
 }
 
-func updateActionWithMethod(target reflect.Value, name string) (UpdateAction, error) {
+func updateActionWithMethod(target reflect.Value, name string, fieldIndex []int) (UpdateAction, error) {
 	m := target.MethodByName(name)
 	if m.Kind() == reflect.Invalid {
 		return nil, nil
 	}
 	t := m.Type()
-	if t.NumIn() != updateActionType.NumIn() || t.In(0) != updateActionType.In(0) || t.In(1) != updateActionType.In(1) {
-		return nil, fmt.Errorf("bad action method signature %v: 2 parameter expected of type context.Context and state.Actionable", m)
+	if t.NumIn() != updateActionType.NumIn() || t.In(0) != updateActionType.In(0) {
+		return nil, fmt.Errorf("bad action method signature %s %#v on %s: 2 parameters expected, first must be context.Context",
+			name, m, target.Type())
 	}
-	return func(ctx context.Context, prev Actionable) error {
-		res := m.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(prev)})
+	return func(ctx context.Context, prev interface{}) error {
+		prevArg := reflect.ValueOf(prev)
+		if len(fieldIndex) > 0 {
+			structValue := prevArg
+			if structValue.Kind() == reflect.Ptr {
+				structValue = structValue.Elem()
+			}
+			if structValue.Kind() != reflect.Struct {
+				panic("state: inconsistency in method calls, got " + structValue.Type().String() + "instead of a struct")
+			}
+			prevArg = structValue.FieldByIndex(fieldIndex)
+		}
+		res := m.Call([]reflect.Value{reflect.ValueOf(ctx), prevArg})
+		if res[0].IsNil() {
+			return nil
+		}
 		return res[0].Interface().(error)
 	}, nil
 }
@@ -246,25 +264,63 @@ func buildActionable(target reflect.Value) (Actionable, error) {
 		return act, nil
 	}
 
-	if target.Kind() == reflect.Struct || (target.Kind() == reflect.Ptr && target.Elem().Kind() == reflect.Struct) {
-		var (
-			res actions
-			err error
-		)
-		if res.create, err = actionWithMethod(target, "Create"); err != nil {
-			return nil, err
-		}
-		if res.remove, err = actionWithMethod(target, "Remove"); err != nil {
-			return nil, err
-		}
-		if res.update, err = updateActionWithMethod(target, "Update"); err != nil {
-			return nil, err
-		}
-		if res.isNoop() {
-			return noop, nil
-		}
-		return res, err
+	methodsPossible := target.Kind() == reflect.Struct
+	structType := target.Type()
+	if target.Kind() == reflect.Ptr && target.Elem().Kind() == reflect.Struct {
+		structType = target.Elem().Type()
+		methodsPossible = true
 	}
 
-	return noop, nil
+	if !methodsPossible {
+		return noop, nil
+	}
+
+	var (
+		res actions
+		err error
+	)
+	if res.create, err = actionWithMethod(target, "Create"); err != nil {
+		return nil, err
+	}
+	if res.remove, err = actionWithMethod(target, "Remove"); err != nil {
+		return nil, err
+	}
+	if res.update, err = updateActionWithMethod(target, "Update", nil); err != nil {
+		return nil, err
+	}
+
+	if res.update == nil {
+		updateActions := make([]UpdateAction, 0, structType.NumField())
+		for i := 0; i < structType.NumField(); i++ {
+			field := structType.Field(i)
+			if field.PkgPath != "" {
+				continue
+			}
+			tagValue := field.Tag.Get("state")
+			if tagValue != "" && tagValue != "id" {
+				if update, err := updateActionWithMethod(target, tagValue, field.Index); err == nil {
+					if update != nil {
+						updateActions = append(updateActions, update)
+					}
+				} else {
+					return nil, err
+				}
+			}
+		}
+		if len(updateActions) > 0 {
+			res.update = func(ctx context.Context, prev interface{}) error {
+				for _, act := range updateActions {
+					if err := act(ctx, prev); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
+		}
+	}
+
+	if res.isNoop() {
+		return noop, nil
+	}
+	return res, err
 }

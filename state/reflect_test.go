@@ -92,8 +92,8 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "slice of structs",
 			input: []interface{}{&testStruct, &testStruct},
 			want: []Item{
-				ComposedItem{StringId("/0"), prefixedStructState("/0"), nil},
-				ComposedItem{StringId("/1"), prefixedStructState("/1"), nil},
+				ComposedItem{StringId("/0"), prefixedStructState("/0"), nil, nil},
+				ComposedItem{StringId("/1"), prefixedStructState("/1"), nil, nil},
 			},
 			wantErr: false,
 		},
@@ -101,7 +101,7 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "struct with struct",
 			input: &wrappingStruct,
 			want: []Item{
-				ComposedItem{StringId("/Data"), prefixedStructState("/Data"), nil},
+				ComposedItem{StringId("/Data"), prefixedStructState("/Data"), nil, nil},
 			},
 			wantErr: false,
 		},
@@ -120,7 +120,7 @@ func TestBuildStateItems(t *testing.T) {
 			gotComparator := ComposedItem{IdValue: StringId(""), Parts: got}
 			wantComparator := ComposedItem{IdValue: StringId(""), Parts: tt.want}
 			if !gotComparator.IsSame(wantComparator) {
-				t.Errorf("BuildStateItems() got = %v, want %v", got, tt.want)
+				t.Errorf("BuildStateItems() got\n%v\nwant\n%v", got, tt.want)
 			}
 		})
 	}
@@ -156,14 +156,14 @@ func TestBuildStateItems_IdTag(t *testing.T) {
 	}
 }
 
-func assureNoErrors(t *testing.T, act Actionable) {
+func assureNoErrors(t *testing.T, act Actionable, updateArg interface{}) {
 	if err := act.Create(context.TODO()); err != nil {
 		t.Error("Unexpected error on create", err)
 	}
 	if err := act.Remove(context.TODO()); err != nil {
 		t.Error("Unexpected error on remove", err)
 	}
-	if err := act.Update(context.TODO(), act); err != nil {
+	if err := act.Update(context.TODO(), updateArg); err != nil {
 		t.Error("Unexpected error on update", err)
 	}
 }
@@ -177,18 +177,22 @@ func mustBuildActionable(t *testing.T, v interface{}) Actionable {
 }
 
 func TestBuildActionable_Noop(t *testing.T) {
-	assureNoErrors(t, mustBuildActionable(t, "something"))
-	assureNoErrors(t, mustBuildActionable(t, 42))
-	assureNoErrors(t, mustBuildActionable(t, noop))
+	assureNoErrors(t, mustBuildActionable(t, "something"), "does not matter")
+	assureNoErrors(t, mustBuildActionable(t, 42), "does not matter")
+	assureNoErrors(t, mustBuildActionable(t, noop), "does not matter")
 }
 
 func TestBuildActionable_Actionable(t *testing.T) {
 	var recording recorder
 	tsi := testStateItem{id: "test", arg: "a", recorder: &recording}
-	assureNoErrors(t, mustBuildActionable(t, tsi))
+	actionable := mustBuildActionable(t, tsi)
+	assureNoErrors(t, actionable, tsi)
 	want := recorder{"create test with a", "remove test with a", "update test with a from test/a"}
 	if !reflect.DeepEqual(recording, want) {
 		t.Errorf("Unexpected actions result: got %s, want %s", recording, want)
+	}
+	if actionable != tsi {
+		t.Errorf("Actioinable implemntation was not used, got %s", actionable)
 	}
 }
 
@@ -218,10 +222,14 @@ func (t *testStateStruct) Remove(context.Context) error {
 
 func TestBuildActionable_Struct(t *testing.T) {
 	var recording recorder
-	assureNoErrors(t, mustBuildActionable(t, makeTestStruct(&recording)))
+	value := makeTestStruct(&recording)
+	valuePrev := makeTestStruct(&recording)
+	valuePrev.Value = "v0"
+	assureNoErrors(t, mustBuildActionable(t, value), valuePrev)
 	want := recorder{
 		"create testStateStruct with id aa",
 		"remove testStateStruct with id aa",
+		"change testStateStruct value from v0 to v1",
 	}
 	if !reflect.DeepEqual(recording, want) {
 		t.Errorf("Unexpected actions result: got %s, want %s", recording, want)
@@ -267,8 +275,8 @@ func TestBuildStateItems_StructActions(t *testing.T) {
 		"create bb with some arg",
 		"remove bb with some arg",
 		"remove testStateStruct with id aa",
+		"update bb with b from bb/some arg",
 		"change testStateStruct value from v1 to v2",
-		"update test with b from test/a",
 	}
 	if !reflect.DeepEqual(recording, want) {
 		t.Errorf("Unexpected actions result: got %s, want %s", recording, want)

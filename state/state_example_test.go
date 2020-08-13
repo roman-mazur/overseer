@@ -38,7 +38,7 @@ func (d *Desk) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (d *Desk) Update(ctx context.Context, from state.Actionable) error {
+func (d *Desk) Update(ctx context.Context, from interface{}) error {
 	fmt.Println("update from", from, "to", d)
 	return nil
 }
@@ -63,7 +63,7 @@ func (r *HouseRoom) Create(ctx context.Context) error {
 	return nil
 }
 
-func (r *HouseRoom) Update(ctx context.Context, from state.Actionable) error {
+func (r *HouseRoom) Update(ctx context.Context, from interface{}) error {
 	fmt.Println("update from", from, "to", r)
 	return nil
 }
