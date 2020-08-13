@@ -13,14 +13,16 @@ type Actionable interface {
 	Update(ctx context.Context, from Actionable) error
 }
 
-type StateItem interface {
+type UpdateAction func(ctx context.Context, prev Actionable) error
+
+type Item interface {
 	Actionable
 
 	Id() string
-	IsSame(item StateItem) bool
+	IsSame(item Item) bool
 }
 
-func InferActions(prev []StateItem, next []StateItem) []Action {
+func InferActions(prev []Item, next []Item) []Action {
 	nextState := mapState(next)
 
 	removeActions := make([]Action, 0, len(prev))
@@ -53,27 +55,27 @@ func InferActions(prev []StateItem, next []StateItem) []Action {
 	return actions
 }
 
-func mapState(items []StateItem) map[string]StateItem {
-	itemsMap := make(map[string]StateItem, len(items))
+func mapState(items []Item) map[string]Item {
+	itemsMap := make(map[string]Item, len(items))
 	for _, item := range items {
 		itemsMap[item.Id()] = item
 	}
 	return itemsMap
 }
 
-type StringStateItem struct {
+type StringItem struct {
 	Actionable
 
 	IdValue string
 	Value   string
 }
 
-func (ssi *StringStateItem) Id() string {
+func (ssi *StringItem) Id() string {
 	return ssi.IdValue
 }
 
-func (ssi *StringStateItem) IsSame(another StateItem) bool {
-	if assi, ok := another.(*StringStateItem); ok {
+func (ssi *StringItem) IsSame(another Item) bool {
+	if assi, ok := another.(*StringItem); ok {
 		return ssi.IdValue == assi.IdValue && ssi.Value == assi.Value
 	} else {
 		return false
@@ -90,20 +92,20 @@ func (sid StringId) String() string {
 	return string(sid)
 }
 
-type ComposedStateItem struct {
+type ComposedItem struct {
 	IdValue ItemId
-	Parts   []StateItem
+	Parts   []Item
 }
 
-func (csi ComposedStateItem) Id() string {
+func (csi ComposedItem) Id() string {
 	return csi.IdValue.String()
 }
 
-func (csi ComposedStateItem) IsSame(another StateItem) bool {
+func (csi ComposedItem) IsSame(another Item) bool {
 	if another.Id() != csi.Id() {
 		return false
 	}
-	if acsi, ok := another.(ComposedStateItem); ok {
+	if acsi, ok := another.(ComposedItem); ok {
 		if len(acsi.Parts) != len(csi.Parts) {
 			return false
 		}
@@ -119,7 +121,7 @@ func (csi ComposedStateItem) IsSame(another StateItem) bool {
 	}
 }
 
-func (csi ComposedStateItem) Create(ctx context.Context) error {
+func (csi ComposedItem) Create(ctx context.Context) error {
 	for _, part := range csi.Parts {
 		if err := part.Create(ctx); err != nil {
 			return err
@@ -128,7 +130,7 @@ func (csi ComposedStateItem) Create(ctx context.Context) error {
 	return nil
 }
 
-func (csi ComposedStateItem) Remove(ctx context.Context) error {
+func (csi ComposedItem) Remove(ctx context.Context) error {
 	for _, part := range csi.Parts {
 		if err := part.Remove(ctx); err != nil {
 			return err
@@ -137,10 +139,10 @@ func (csi ComposedStateItem) Remove(ctx context.Context) error {
 	return nil
 }
 
-func (csi ComposedStateItem) Update(ctx context.Context, from Actionable) error {
-	fromCsi, ok := from.(ComposedStateItem)
+func (csi ComposedItem) Update(ctx context.Context, from Actionable) error {
+	fromCsi, ok := from.(ComposedItem)
 	if !ok {
-		panic(fmt.Errorf("bad composition: %s is not a ComposedStateItem", from))
+		panic(fmt.Errorf("bad composition: %s is not a ComposedItem", from))
 	}
 	actions := InferActions(fromCsi.Parts, csi.Parts)
 	for _, act := range actions {

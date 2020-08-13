@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -47,7 +48,7 @@ func (vsi valueStateItem) Id() string {
 	return vsi.valueId.String()
 }
 
-func (vsi valueStateItem) IsSame(other StateItem) bool {
+func (vsi valueStateItem) IsSame(other Item) bool {
 	if aVsi, ok := other.(valueStateItem); ok {
 		return vsi.Id() == aVsi.Id() && reflect.DeepEqual(vsi.value.Interface(), aVsi.value.Interface())
 	} else {
@@ -55,7 +56,16 @@ func (vsi valueStateItem) IsSame(other StateItem) bool {
 	}
 }
 
-var rootId = &valueId{parts: []string{""}}
+type noAction struct{}
+
+func (na noAction) Create(context.Context) error             { return nil }
+func (na noAction) Remove(context.Context) error             { return nil }
+func (na noAction) Update(context.Context, Actionable) error { return nil }
+
+var (
+	noop   Actionable = noAction{}
+	rootId            = &valueId{parts: []string{""}}
+)
 
 func init() {
 	// Make sure it's made immutable early.
@@ -63,19 +73,19 @@ func init() {
 }
 
 // BuildStateItems creates a state representation fom the input struct or slice.
-func BuildStateItems(input interface{}) ([]StateItem, error) {
+func BuildStateItems(input interface{}) ([]Item, error) {
 	v := reflect.ValueOf(input)
-	res, err := buildStateItem(v, rootId)
+	res, err := buildStateItem(v, rootId, noop)
 	if err != nil {
 		return nil, err
 	}
-	if cRes, ok := res.(ComposedStateItem); ok {
+	if cRes, ok := res.(ComposedItem); ok {
 		return cRes.Parts, nil
 	}
 	return nil, fmt.Errorf("unsupported type %s, value: %v", v.Kind(), v)
 }
 
-func buildStateItem(v reflect.Value, id *valueId) (StateItem, error) {
+func buildStateItem(v reflect.Value, id *valueId, actionable Actionable) (Item, error) {
 	for v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr {
 		// Unwrap first.
 		v = v.Elem()
@@ -86,32 +96,32 @@ func buildStateItem(v reflect.Value, id *valueId) (StateItem, error) {
 		panic("value is not unwrapped: " + v.String())
 
 	case reflect.Slice, reflect.Array:
-		parts := make([]StateItem, v.Len())
+		parts := make([]Item, v.Len())
 		for i := range parts {
 			var err error
-			parts[i], err = buildStateItem(v.Index(i), id.next(strconv.Itoa(i)))
+			parts[i], err = buildStateItem(v.Index(i), id.next(strconv.Itoa(i)), noop)
 			if err != nil {
 				return nil, err
 			}
 		}
-		return ComposedStateItem{id, parts}, nil
+		return ComposedItem{id, parts}, nil
 
 	case reflect.Map:
-		parts := make([]StateItem, v.Len())
+		parts := make([]Item, v.Len())
 		i := 0
 		iter := v.MapRange()
 		for iter.Next() {
 			var err error
-			parts[i], err = buildStateItem(iter.Value(), id.next(iter.Key().String()))
+			parts[i], err = buildStateItem(iter.Value(), id.next(iter.Key().String()), noop)
 			if err != nil {
 				return nil, err
 			}
 			i++
 		}
-		return ComposedStateItem{id, parts}, nil
+		return ComposedItem{id, parts}, nil
 
 	case reflect.Struct:
-		parts := make([]StateItem, 0, v.NumField())
+		parts := make([]Item, 0, v.NumField())
 		for i := 0; i < v.NumField(); i++ {
 			field := v.Type().Field(i)
 			// Skip unexported fields.
@@ -127,28 +137,39 @@ func buildStateItem(v reflect.Value, id *valueId) (StateItem, error) {
 				id.update(fmt.Sprintf("%s", v.Field(i)))
 				continue
 			}
-			// TODO: Use the actionable instance.
-			_ = buildActionable(v, tag)
 
-			if part, err := buildStateItem(v.Field(i), id.next(field.Name)); err != nil {
+			if part, err := buildStateItem(v.Field(i), id.next(field.Name), noop); err != nil {
 				return nil, err
 			} else {
 				parts = append(parts, part)
 			}
 		}
-		return ComposedStateItem{id, parts}, nil
+		return ComposedItem{id, parts}, nil
 
 	default:
 		return valueStateItem{
-			valueId: id,
-			value:   v,
+			Actionable: buildActionable(v),
+			valueId:    id,
+			value:      v,
 		}, nil
 	}
 }
 
-func buildActionable(target reflect.Value, funcName string) Actionable {
-	// TODO: Implement.
-	return nil
+type actions struct {
+	create, remove Action
+	update         UpdateAction
+}
+
+func (a actions) Create(ctx context.Context) error                  { return a.create(ctx) }
+func (a actions) Remove(ctx context.Context) error                  { return a.remove(ctx) }
+func (a actions) Update(ctx context.Context, prev Actionable) error { return a.update(ctx, prev) }
+
+func buildActionable(target reflect.Value) Actionable {
+	iValue := target.Interface()
+	if act, ok := iValue.(Actionable); ok {
+		return act
+	}
+	return noop
 }
 
 //type fieldMetadata struct {

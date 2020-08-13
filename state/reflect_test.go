@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -22,7 +23,7 @@ func TestBuildStateItems(t *testing.T) {
 		e string
 	}{"a", 42, true, "internal"}
 
-	structState := []StateItem{
+	structState := []Item{
 		makeValueStateItem("/A", "a"),
 		makeValueStateItem("/B", 42),
 		makeValueStateItem("/C", true),
@@ -30,8 +31,8 @@ func TestBuildStateItems(t *testing.T) {
 
 	mapState := append(structState, makeValueStateItem("/d", 5.5))
 
-	indexedStructState := func(k int) []StateItem {
-		res := make([]StateItem, len(structState))
+	indexedStructState := func(k int) []Item {
+		res := make([]Item, len(structState))
 		for i := range res {
 			item := structState[i].(valueStateItem)
 			res[i] = makeValueStateItem(fmt.Sprintf("/%d%s", k, item.valueId), item.value.Interface())
@@ -42,7 +43,7 @@ func TestBuildStateItems(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   interface{}
-		want    []StateItem
+		want    []Item
 		wantErr bool
 	}{
 		{
@@ -68,7 +69,7 @@ func TestBuildStateItems(t *testing.T) {
 		{
 			name:  "slice",
 			input: []string{"a"},
-			want: []StateItem{
+			want: []Item{
 				makeValueStateItem("/0", "a"),
 			},
 			wantErr: false,
@@ -76,7 +77,7 @@ func TestBuildStateItems(t *testing.T) {
 		{
 			name:  "array",
 			input: [2]string{"abc", "d"},
-			want: []StateItem{
+			want: []Item{
 				makeValueStateItem("/0", "abc"),
 				makeValueStateItem("/1", "d"),
 			},
@@ -85,9 +86,9 @@ func TestBuildStateItems(t *testing.T) {
 		{
 			name:  "slice of structs",
 			input: []interface{}{&testStruct, &testStruct},
-			want: []StateItem{
-				ComposedStateItem{StringId("/0"), indexedStructState(0)},
-				ComposedStateItem{StringId("/1"), indexedStructState(1)},
+			want: []Item{
+				ComposedItem{StringId("/0"), indexedStructState(0)},
+				ComposedItem{StringId("/1"), indexedStructState(1)},
 			},
 			wantErr: false,
 		},
@@ -99,7 +100,7 @@ func TestBuildStateItems(t *testing.T) {
 				t.Errorf("BuildStateItems() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !(ComposedStateItem{IdValue: StringId(""), Parts: got}).IsSame(ComposedStateItem{IdValue: StringId(""), Parts: tt.want}) {
+			if !(ComposedItem{IdValue: StringId(""), Parts: got}).IsSame(ComposedItem{IdValue: StringId(""), Parts: tt.want}) {
 				t.Errorf("BuildStateItems() got = %v, want %v", got, tt.want)
 			}
 		})
@@ -134,4 +135,21 @@ func TestBuildStateItems_IdTag(t *testing.T) {
 	if items[1].Id() != "/id1/BoolValue" {
 		t.Errorf("Unexpected IDs in the items: %s", items)
 	}
+}
+
+func assureNoErrors(t *testing.T, act Actionable) {
+	if err := act.Create(context.TODO()); err != nil {
+		t.Error("Unexpected error on create", err)
+	}
+	if err := act.Remove(context.TODO()); err != nil {
+		t.Error("Unexpected error on remove", err)
+	}
+	if err := act.Update(context.TODO(), act); err != nil {
+		t.Error("Unexpected error on update", err)
+	}
+}
+
+func TestBuildActionable(t *testing.T) {
+	assureNoErrors(t, buildActionable(reflect.ValueOf("something")))
+	assureNoErrors(t, buildActionable(reflect.ValueOf(noop)))
 }

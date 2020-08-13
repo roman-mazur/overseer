@@ -21,7 +21,7 @@ func (tsi testStateItem) String() string {
 	return tsi.id + "/" + tsi.arg
 }
 
-func (tsi testStateItem) IsSame(another StateItem) bool {
+func (tsi testStateItem) IsSame(another Item) bool {
 	if atsi, ok := another.(testStateItem); ok {
 		return tsi.id == atsi.id && tsi.arg == atsi.arg
 	} else {
@@ -53,8 +53,8 @@ type testInput struct {
 	arg string
 }
 
-func stateItems(input []testInput, recorder *[]string) []StateItem {
-	res := make([]StateItem, len(input))
+func stateItems(input []testInput, recorder *[]string) []Item {
+	res := make([]Item, len(input))
 	for i, in := range input {
 		res[i] = testStateItem{id: in.id, arg: in.arg, recorder: recorder}
 	}
@@ -142,7 +142,7 @@ func TestInferActions(t *testing.T) {
 
 func TestComposedStateItem_Create(t *testing.T) {
 	var performedActions []string
-	csi := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
 	if err := csi.Create(context.TODO()); err != nil {
@@ -156,7 +156,7 @@ func TestComposedStateItem_Create(t *testing.T) {
 
 func TestComposedStateItem_Remove(t *testing.T) {
 	var performedActions []string
-	csi := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
 	if err := csi.Remove(context.TODO()); err != nil {
@@ -169,22 +169,22 @@ func TestComposedStateItem_Remove(t *testing.T) {
 }
 
 func TestComposedStateItem_IsSame(t *testing.T) {
-	csi1 := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1 := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, nil)}
-	csi1Copy := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1Copy := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, nil)}
-	csi1Copy2 := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1Copy2 := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "2", arg: "b"}, {id: "1", arg: "a"},
 	}, nil)}
-	csi2 := ComposedStateItem{IdValue: StringId("csi2"), Parts: stateItems([]testInput{
+	csi2 := ComposedItem{IdValue: StringId("csi2"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, nil)}
-	csi1Changed := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1Changed := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "2", arg: "a"}, {id: "1", arg: "b"},
 	}, nil)}
-	csi1Changed2 := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1Changed2 := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"},
 	}, nil)}
 
@@ -207,10 +207,10 @@ func TestComposedStateItem_IsSame(t *testing.T) {
 
 func TestComposedStateItem_Update(t *testing.T) {
 	var performedActions []string
-	csi1 := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1 := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"}, {id: "2", arg: "b"},
 	}, &performedActions)}
-	csi1Changed := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1Changed := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "2", arg: "a"}, {id: "1", arg: "b"},
 	}, &performedActions)}
 	if err := csi1Changed.Update(context.TODO(), csi1); err != nil {
@@ -222,7 +222,7 @@ func TestComposedStateItem_Update(t *testing.T) {
 	}
 
 	performedActions = nil
-	csi1Changed2 := ComposedStateItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
+	csi1Changed2 := ComposedItem{IdValue: StringId("csi1"), Parts: stateItems([]testInput{
 		{id: "1", arg: "a"},
 	}, &performedActions)}
 	if err := csi1Changed2.Update(context.TODO(), csi1); err != nil {
@@ -235,10 +235,10 @@ func TestComposedStateItem_Update(t *testing.T) {
 }
 
 func TestStringStateItem_IsSame(t *testing.T) {
-	ssi1 := &StringStateItem{IdValue: "test-1", Value: "v1"}
-	ssi1Copy := &StringStateItem{IdValue: "test-1", Value: "v1"}
-	ssi2 := &StringStateItem{IdValue: "test-2", Value: "v1"}
-	ssi2Changed := &StringStateItem{IdValue: "test-2", Value: "v2"}
+	ssi1 := &StringItem{IdValue: "test-1", Value: "v1"}
+	ssi1Copy := &StringItem{IdValue: "test-1", Value: "v1"}
+	ssi2 := &StringItem{IdValue: "test-2", Value: "v1"}
+	ssi2Changed := &StringItem{IdValue: "test-2", Value: "v2"}
 
 	if !ssi1.IsSame(ssi1Copy) {
 		t.Errorf("%s should be the same as %s", ssi1, ssi1Copy)
