@@ -4,40 +4,14 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strconv"
-	"strings"
 )
-
-type valueId struct {
-	parts    []string
-	cachedId string
-}
-
-func (vi *valueId) next(part string) *valueId {
-	res := &valueId{parts: vi.parts}
-	res.update(part)
-	return res
-}
-
-func (vi *valueId) update(part string) {
-	if len(vi.cachedId) > 0 {
-		panic(fmt.Errorf("update with %s after cache value has been set on %s", part, vi.cachedId))
-	}
-	vi.parts = append(vi.parts, part)
-}
-
-func (vi *valueId) String() string {
-	if len(vi.cachedId) == 0 {
-		vi.cachedId = strings.Join(vi.parts, "/")
-	}
-	return vi.cachedId
-}
 
 type valueStateItem struct {
 	Actionable
 
 	valueId *valueId
 	value   reflect.Value
+	parent *valueStateItem
 }
 
 func (vsi valueStateItem) String() string {
@@ -69,12 +43,12 @@ var (
 // BuildStateItems creates a state representation fom the input struct or slice.
 func BuildStateItems(input interface{}) ([]Item, error) {
 	v := reflect.ValueOf(input)
-	res, err := buildStateItem(v, &valueId{parts: []string{""}})
+	res, err := buildStateItem(v, &valueId{}, nil)
 	if err != nil {
 		return nil, err
 	}
 	if cRes, ok := res.(ComposedItem); ok {
-		if cRes.Actions != nil && cRes.Actions != noop {
+		if cRes.actions != nil && cRes.actions != noop {
 			return []Item{cRes}, nil
 		}
 		return cRes.Parts, nil
@@ -82,7 +56,12 @@ func BuildStateItems(input interface{}) ([]Item, error) {
 	return nil, fmt.Errorf("unsupported type %s, value: %v", v.Kind(), v)
 }
 
-func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
+type fieldContext struct {
+	field *reflect.StructField
+	target *reflect.Value
+}
+
+func buildStateItem(v reflect.Value, id *valueId, fctx *fieldContext) (Item, error) {
 	origValue := v
 	for v.Kind() == reflect.Interface || v.Kind() == reflect.Ptr {
 		// Unwrap first.
@@ -91,13 +70,13 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 
 	switch v.Kind() {
 	case reflect.Ptr, reflect.Interface:
-		panic("value is not unwrapped: " + v.String())
+		panic("state: value is not unwrapped: " + v.String())
 
 	case reflect.Slice, reflect.Array:
 		parts := make([]Item, v.Len())
 		for i := range parts {
 			var err error
-			parts[i], err = buildStateItem(v.Index(i), id.next(strconv.Itoa(i)))
+			parts[i], err = buildStateItem(v.Index(i), id.nextListId(i), nil)
 			if err != nil {
 				return nil, err
 			}
@@ -110,7 +89,7 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 		iter := v.MapRange()
 		for iter.Next() {
 			var err error
-			parts[i], err = buildStateItem(iter.Value(), id.next(iter.Key().String()))
+			parts[i], err = buildStateItem(iter.Value(), id.next(iter.Key().String()), nil)
 			if err != nil {
 				return nil, err
 			}
@@ -132,17 +111,17 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 				continue
 			}
 			if tag == "id" {
-				id.update(fmt.Sprintf("%s", v.Field(i)))
+				id = id.inject(fmt.Sprintf("%s", v.Field(i)))
 				continue
 			}
 
-			if part, err := buildStateItem(v.Field(i), id.next(field.Name)); err != nil {
+			if part, err := buildStateItem(v.Field(i), id.next(field.Name), &fieldContext{field: &field, target: &origValue}); err != nil {
 				return nil, err
 			} else {
 				parts = append(parts, part)
 			}
 		}
-		act, err := structActionable(v, origValue)
+		act, err := structActionable(v, origValue, fctx)
 		if err != nil {
 			return nil, err
 		}
@@ -152,7 +131,7 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 		return ComposedItem{id, parts, act, v.Interface()}, nil
 
 	default:
-		act, err := buildActionable(v)
+		act, err := buildActionable(v, fctx)
 		if err != nil {
 			return nil, err
 		}
@@ -164,17 +143,17 @@ func buildStateItem(v reflect.Value, id *valueId) (Item, error) {
 	}
 }
 
-func structActionable(v reflect.Value, origValue reflect.Value) (Actionable, error) {
+func structActionable(v reflect.Value, origValue reflect.Value, fctx *fieldContext) (Actionable, error) {
 	var (
 		act Actionable
 		err error
 	)
-	act, err = buildActionable(origValue)
+	act, err = buildActionable(origValue, fctx)
 	if err != nil {
 		return nil, err
 	}
 	if act == noop {
-		act, err = buildActionable(v)
+		act, err = buildActionable(v, fctx)
 		if err != nil {
 			return nil, err
 		}
@@ -183,8 +162,10 @@ func structActionable(v reflect.Value, origValue reflect.Value) (Actionable, err
 }
 
 type actions struct {
+	wrapped Actionable
+
 	create, remove Action
-	update         UpdateAction
+	update, parentUpdate UpdateAction
 }
 
 func callAction(a Action, ctx context.Context) error {
@@ -194,17 +175,45 @@ func callAction(a Action, ctx context.Context) error {
 	return nil
 }
 
-func (a actions) Create(ctx context.Context) error { return callAction(a.create, ctx) }
-func (a actions) Remove(ctx context.Context) error { return callAction(a.remove, ctx) }
-func (a actions) Update(ctx context.Context, prev interface{}) error {
-	if a.update == nil {
-		return nil
+func (a actions) Create(ctx context.Context) error {
+	if err := callAction(a.create, ctx); err != nil {
+		return err
 	}
-	return a.update(ctx, prev)
+	if a.wrapped != nil {
+		return a.wrapped.Create(ctx)
+	}
+	return nil
+}
+func (a actions) Remove(ctx context.Context) error {
+	if a.wrapped != nil {
+		if err := a.wrapped.Remove(ctx); err != nil {
+			return err
+		}
+	}
+	return callAction(a.remove, ctx)
+}
+func (a actions) Update(ctx context.Context, prev interface{}) error {
+	if a.update != nil {
+		if err := a.update(ctx, prev); err != nil {
+			return err
+		}
+	}
+	if a.parentUpdate != nil {
+		if err := a.parentUpdate(ctx, prev); err != nil {
+			return err
+		}
+	}
+	if a.wrapped != nil {
+		return a.wrapped.Update(ctx, prev)
+	}
+	return nil
 }
 
 func (a actions) isNoop() bool {
-	return a.create == nil && a.remove == nil && a.update == nil
+	return a.create == nil && a.remove == nil && a.update == nil && a.wrapped == nil && a.parentUpdate == nil
+}
+func (a actions) isWrapperOnly() bool {
+	return a.create == nil && a.remove == nil && a.update == nil && a.parentUpdate == nil && a.wrapped != nil
 }
 
 var actionType = reflect.TypeOf(Action(nil))
@@ -215,6 +224,7 @@ func actionWithMethod(target reflect.Value, name string) (Action, error) {
 	if m.Kind() == reflect.Invalid {
 		return nil, nil
 	}
+	m.Recv()
 	t := m.Type()
 	if t.NumIn() != actionType.NumIn() || t.In(0) != actionType.In(0) {
 		return nil, fmt.Errorf("bad action method signature %v: 1 parameter expected of type context.Context", m)
@@ -240,7 +250,11 @@ func updateActionWithMethod(target reflect.Value, name string, fieldIndex []int)
 	}
 	return func(ctx context.Context, prev interface{}) error {
 		prevArg := reflect.ValueOf(prev)
+		if vsi, ok := prev.(valueStateItem); ok {
+			prevArg = vsi.value
+		}
 		if len(fieldIndex) > 0 {
+			// TODO: remove this code.
 			structValue := prevArg
 			if structValue.Kind() == reflect.Ptr {
 				structValue = structValue.Elem()
@@ -258,67 +272,53 @@ func updateActionWithMethod(target reflect.Value, name string, fieldIndex []int)
 	}, nil
 }
 
-func buildActionable(target reflect.Value) (Actionable, error) {
-	iValue := target.Interface()
-	if act, ok := iValue.(Actionable); ok {
-		return act, nil
-	}
-
-	methodsPossible := target.Kind() == reflect.Struct
-	structType := target.Type()
-	if target.Kind() == reflect.Ptr && target.Elem().Kind() == reflect.Struct {
-		structType = target.Elem().Type()
-		methodsPossible = true
-	}
-
-	if !methodsPossible {
-		return noop, nil
+func buildActionable(target reflect.Value, fctx *fieldContext) (Actionable, error) {
+	if fctx != nil && fctx.target == nil {
+		panic("state: field context target not defined")
 	}
 
 	var (
 		res actions
 		err error
 	)
-	if res.create, err = actionWithMethod(target, "Create"); err != nil {
-		return nil, err
-	}
-	if res.remove, err = actionWithMethod(target, "Remove"); err != nil {
-		return nil, err
-	}
-	if res.update, err = updateActionWithMethod(target, "Update", nil); err != nil {
-		return nil, err
-	}
 
-	if res.update == nil {
-		updateActions := make([]UpdateAction, 0, structType.NumField())
-		for i := 0; i < structType.NumField(); i++ {
-			field := structType.Field(i)
-			if field.PkgPath != "" {
-				continue
-			}
-			tagValue := field.Tag.Get("state")
-			if tagValue != "" && tagValue != "id" {
-				if update, err := updateActionWithMethod(target, tagValue, field.Index); err == nil {
-					if update != nil {
-						updateActions = append(updateActions, update)
-					}
-				} else {
-					return nil, err
-				}
-			}
+	iValue := target.Interface()
+	if act, ok := iValue.(Actionable); ok {
+		res.wrapped = act
+	} else {
+		cruMethodsPossible := target.Kind() == reflect.Struct
+		if target.Kind() == reflect.Ptr && target.Elem().Kind() == reflect.Struct {
+			cruMethodsPossible = true
 		}
-		if len(updateActions) > 0 {
-			res.update = func(ctx context.Context, prev interface{}) error {
-				for _, act := range updateActions {
-					if err := act(ctx, prev); err != nil {
-						return err
-					}
-				}
-				return nil
+
+		if cruMethodsPossible {
+			if res.create, err = actionWithMethod(target, "Create"); err != nil {
+				return nil, err
+			}
+			if res.remove, err = actionWithMethod(target, "Remove"); err != nil {
+				return nil, err
+			}
+			if res.update, err = updateActionWithMethod(target, "Update", nil); err != nil {
+				return nil, err
 			}
 		}
 	}
 
+	parentUpdateMethod := ""
+	if fctx != nil {
+		parentUpdateMethod = fctx.field.Tag.Get("state")
+		if parentUpdateMethod == "-" || parentUpdateMethod == "id" {
+			parentUpdateMethod = ""
+		}
+	}
+
+	if parentUpdateMethod != "" {
+		res.parentUpdate, err = updateActionWithMethod(*fctx.target, parentUpdateMethod, nil)
+	}
+
+	if res.isWrapperOnly() {
+		return res.wrapped, nil
+	}
 	if res.isNoop() {
 		return noop, nil
 	}

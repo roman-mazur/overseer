@@ -22,7 +22,9 @@ type Item interface {
 	IsSame(item Item) bool
 }
 
-func InferActions(prev []Item, next []Item) []Action {
+type Set []Item
+
+func InferActions(prev, next Set) []Action {
 	nextState := mapState(next)
 
 	removeActions := make([]Action, 0, len(prev))
@@ -82,21 +84,12 @@ func (ssi *StringItem) IsSame(another Item) bool {
 	}
 }
 
-type ItemId interface {
-	String() string
-}
-
-type StringId string
-
-func (sid StringId) String() string {
-	return string(sid)
-}
-
 type ComposedItem struct {
 	IdValue  ItemId
 	Parts    []Item
-	Actions  Actionable
-	Original interface{}
+
+	actions  Actionable
+	original interface{}
 }
 
 func (csi ComposedItem) Id() string {
@@ -111,12 +104,12 @@ func (csi ComposedItem) IsSame(another Item) bool {
 		return false
 	}
 	if acsi, ok := another.(ComposedItem); ok {
-		if csi.Actions != nil {
-			if acsi.Actions == nil {
+		if csi.actions != nil {
+			if acsi.actions == nil {
 				return false
 			}
-			if item, ok := csi.Actions.(Item); ok {
-				if otherItem, ok := acsi.Actions.(Item); ok {
+			if item, ok := csi.actions.(Item); ok {
+				if otherItem, ok := acsi.actions.(Item); ok {
 					if !item.IsSame(otherItem) {
 						return false
 					}
@@ -124,7 +117,7 @@ func (csi ComposedItem) IsSame(another Item) bool {
 					return false
 				}
 			}
-		} else if acsi.Actions != nil {
+		} else if acsi.actions != nil {
 			return false
 		}
 
@@ -133,9 +126,13 @@ func (csi ComposedItem) IsSame(another Item) bool {
 		}
 		anotherState := mapState(acsi.Parts)
 		for _, part := range csi.Parts {
-			if !part.IsSame(anotherState[part.Id()]) {
+			if anotherPart, present := anotherState[part.Id()]; !present || !part.IsSame(anotherPart) {
 				return false
 			}
+			delete(anotherState, part.Id())
+		}
+		if len(anotherState) > 0 {
+			return false
 		}
 		return true
 	} else {
@@ -144,8 +141,8 @@ func (csi ComposedItem) IsSame(another Item) bool {
 }
 
 func (csi ComposedItem) Create(ctx context.Context) error {
-	if csi.Actions != nil {
-		err := csi.Actions.Create(ctx)
+	if csi.actions != nil {
+		err := csi.actions.Create(ctx)
 		if err != nil {
 			return err
 		}
@@ -164,8 +161,8 @@ func (csi ComposedItem) Remove(ctx context.Context) error {
 			return err
 		}
 	}
-	if csi.Actions != nil {
-		return csi.Actions.Remove(ctx)
+	if csi.actions != nil {
+		return csi.actions.Remove(ctx)
 	}
 	return nil
 }
@@ -181,16 +178,16 @@ func (csi ComposedItem) Update(ctx context.Context, from interface{}) error {
 			return err
 		}
 	}
-	if csi.Actions != nil {
+	if csi.actions != nil {
 		prev := from
-		if fromCsi.Original != nil {
-			prev = fromCsi.Original
+		if fromCsi.original != nil {
+			prev = fromCsi.original
 		}
-		return csi.Actions.Update(ctx, prev)
+		return csi.actions.Update(ctx, prev)
 	}
 	return nil
 }
 
 func (csi ComposedItem) String() string {
-	return fmt.Sprint("{id:", csi.Id(), ", actions:", csi.Actions != nil, ", parts:", csi.Parts, "}")
+	return fmt.Sprint("{id:", csi.Id(), ", actions:", csi.actions != nil, ", parts:", csi.Parts, "}")
 }

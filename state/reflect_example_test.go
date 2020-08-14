@@ -9,6 +9,16 @@ import (
 
 type Color int
 
+func (c Color) String() string {
+	switch c {
+	case ColorWhite: return "white"
+	case ColorRed: return "red"
+	case ColorBlue: return "blue"
+	default:
+		return "unknown"
+	}
+}
+
 const (
 	ColorWhite Color = iota
 	ColorRed
@@ -16,12 +26,12 @@ const (
 )
 
 type Space struct {
-	Color Color
-	Area  float32
+	Color Color `state:"Repaint"`
+	Area  float32 `state:"Resize"`
 }
 
 func (space Space) Create(ctx context.Context) error {
-	fmt.Printf("Creating space with color %d and size %f\n", space.Color, space.Area)
+	fmt.Printf("Creating space with color %s and size %.1f\n", space.Color, space.Area)
 	return nil
 }
 
@@ -36,22 +46,22 @@ func (space Space) Resize(ctx context.Context, prev float32) error {
 }
 
 func (space Space) Remove(ctx context.Context) error {
-	fmt.Printf("Removing space with color %d and size %f\n", space.Color, space.Area)
+	fmt.Printf("Removing space with color %s and size %.1f\n", space.Color, space.Area)
 	return nil
 }
 
 type MobileHouse struct {
 	Space
 	Bedrooms []*Room
-	Address  string
+	Address  string `state:"Move"`
 
 	Id         string `state:"id"`
 	HasTenants bool   `state:"-"`
 }
 
 func (h *MobileHouse) Create(ctx context.Context) error {
-	fmt.Printf("Creating house at %s", h.Address)
-	return h.Space.Create(ctx)
+	fmt.Printf("Creating house at %s\n", h.Address)
+	return nil
 }
 
 func (h *MobileHouse) Move(ctx context.Context, prevAddress string) error {
@@ -59,9 +69,9 @@ func (h *MobileHouse) Move(ctx context.Context, prevAddress string) error {
 	return nil
 }
 
-func (h *MobileHouse) Removing(ctx context.Context) error {
+func (h *MobileHouse) Remove(ctx context.Context) error {
 	fmt.Printf("Removing house at %s", h.Address)
-	return h.Space.Remove(ctx)
+	return nil
 }
 
 type Room struct {
@@ -70,16 +80,14 @@ type Room struct {
 }
 
 func (r *Room) Create(ctx context.Context) error {
-	fmt.Printf("Creating room %s", r.Name)
-	return r.Space.Create(ctx)
+	fmt.Println("Creating room", r.Name)
+	return nil
 }
 
 func ExampleBuildStateItems() {
 	blueSpace := Space{ColorBlue, 1}
 	redSpace := Space{ColorRed, 1}
 	whiteSpace := Space{ColorWhite, 2}
-
-	var state0 []state.Item
 
 	state1, err := state.BuildStateItems(&MobileHouse{
 		Space:   blueSpace,
@@ -111,31 +119,32 @@ func ExampleBuildStateItems() {
 
 	ctx := context.Background()
 
-	fmt.Println(">> From state0 to state1")
-	actionsCreate := state.InferActions(state0, state1)
+	fmt.Println(">> From empty to state1")
+	actionsCreate := state.InferActions(nil, state1)
 	for _, act := range actionsCreate {
 		_ = act(ctx)
 	}
 
-	fmt.Println(">> From state1 to state0")
+	fmt.Println(">> From state1 to state2")
 	actionsUpdate := state.InferActions(state1, state2)
 	for _, act := range actionsUpdate {
 		_ = act(ctx)
 	}
 
 	// Output:
-	// >> From state0 to state1
+	// >> From empty to state1
 	// Creating house at 5 Cherry lane
-	// Creating space with color and size
+	// Creating space with color blue and size 1.0
 	// Creating room bedroom 0
-	// Creating space with color and size
+	// Creating space with color blue and size 1.0
 	// Creating room bedroom 1
-	// Creating space with color and size
+	// Creating space with color white and size 2.0
 	// >> From state1 to state0
 	// Repainting from blue to red
-	// Moving house A from 5 Cherry lane to 5 Bazhana ave.
-	// Removing bedroom 0
+	// Removing space with color blue and size 1.0
 	// Repainting from white to blue
 	// Resizing from 2 to 1
-	// Creating bedroom 1
+	// Creating bedroom 2
+	// Creating space with color red and size 1.0
+	// Moving house A from 5 Cherry lane to 5 Bazhana ave.
 }

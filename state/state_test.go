@@ -61,8 +61,8 @@ type testInput struct {
 	arg string
 }
 
-func stateItems(input []testInput, recorder *recorder) []Item {
-	res := make([]Item, len(input))
+func stateItems(input []testInput, recorder *recorder) Set {
+	res := make(Set, len(input))
 	for i, in := range input {
 		res[i] = testStateItem{id: in.id, arg: in.arg, recorder: recorder}
 	}

@@ -3,13 +3,12 @@ package state
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 )
 
-func makeValueStateItem(id string, value interface{}) valueStateItem {
+func makeExpectedItem(id string, value interface{}) Item {
 	return valueStateItem{
-		valueId: &valueId{parts: strings.Split(id, "/")},
+		valueId: &valueId{cachedId: id},
 		value:   reflect.ValueOf(value),
 	}
 }
@@ -29,18 +28,18 @@ func TestBuildStateItems(t *testing.T) {
 	}
 
 	structState := []Item{
-		makeValueStateItem("/A", "a"),
-		makeValueStateItem("/B", 42),
-		makeValueStateItem("/C", true),
+		makeExpectedItem("/A", "a"),
+		makeExpectedItem("/B", 42),
+		makeExpectedItem("/C", true),
 	}
 
-	mapState := append(structState, makeValueStateItem("/d", 5.5))
+	mapState := append(structState, makeExpectedItem("/d", 5.5))
 
 	prefixedStructState := func(prefix string) []Item {
 		res := make([]Item, len(structState))
 		for i := range res {
 			item := structState[i].(valueStateItem)
-			res[i] = makeValueStateItem(prefix+item.valueId.String(), item.value.Interface())
+			res[i] = makeExpectedItem(prefix+item.valueId.String(), item.value.Interface())
 		}
 		return res
 	}
@@ -75,7 +74,7 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "slice",
 			input: []string{"a"},
 			want: []Item{
-				makeValueStateItem("/0", "a"),
+				makeExpectedItem("/0", "a"),
 			},
 			wantErr: false,
 		},
@@ -83,8 +82,8 @@ func TestBuildStateItems(t *testing.T) {
 			name:  "array",
 			input: [2]string{"abc", "d"},
 			want: []Item{
-				makeValueStateItem("/0", "abc"),
-				makeValueStateItem("/1", "d"),
+				makeExpectedItem("/0", "abc"),
+				makeExpectedItem("/1", "d"),
 			},
 			wantErr: false,
 		},
@@ -128,16 +127,15 @@ func TestBuildStateItems(t *testing.T) {
 
 func TestBuildStateItems_IdTag(t *testing.T) {
 	type data struct {
-		Id string `state:"id"`
-
 		Value     int
+		Id string `state:"id"`
 		BoolValue bool
 
 		Ignore1 string `state:"-"`
 		ignore2 string
 	}
 
-	items, err := BuildStateItems(&data{"id1", 42, true, "", ""})
+	items, err := BuildStateItems(&data{ 42, "id1", true, "", ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +167,7 @@ func assureNoErrors(t *testing.T, act Actionable, updateArg interface{}) {
 }
 
 func mustBuildActionable(t *testing.T, v interface{}) Actionable {
-	res, err := buildActionable(reflect.ValueOf(v))
+	res, err := buildActionable(reflect.ValueOf(v), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +227,6 @@ func TestBuildActionable_Struct(t *testing.T) {
 	want := recorder{
 		"create testStateStruct with id aa",
 		"remove testStateStruct with id aa",
-		"change testStateStruct value from v0 to v1",
 	}
 	if !reflect.DeepEqual(recording, want) {
 		t.Errorf("Unexpected actions result: got %s, want %s", recording, want)
@@ -275,8 +272,8 @@ func TestBuildStateItems_StructActions(t *testing.T) {
 		"create bb with some arg",
 		"remove bb with some arg",
 		"remove testStateStruct with id aa",
-		"update bb with b from bb/some arg",
 		"change testStateStruct value from v1 to v2",
+		"update bb with b from bb/some arg",
 	}
 	if !reflect.DeepEqual(recording, want) {
 		t.Errorf("Unexpected actions result: got %s, want %s", recording, want)
