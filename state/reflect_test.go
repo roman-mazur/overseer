@@ -281,7 +281,10 @@ func (i Inner) Create(ctx context.Context) error {
 	return nil
 }
 
-type outer struct{ Inner }
+type outer struct {
+	// We don't define Create method on outer, so we have to make Inner ignored to avoid double invocations.
+	Inner `state:"-"`
+}
 
 func TestBuildActionable_Embedded(t *testing.T) {
 	var recording recorder

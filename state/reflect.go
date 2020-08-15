@@ -168,11 +168,8 @@ func resolveMethod(target reflect.Value, name string, methodType reflect.Type) (
 
 func actionWithMethod(target reflect.Value, name string) (ActionFunc, error) {
 	m, present, err := resolveMethod(target, name, actionFuncType)
-	if err != nil {
+	if !present || err != nil {
 		return nil, err
-	}
-	if !present {
-		return nil, nil
 	}
 	return func(ctx context.Context) error {
 		res := m.Call([]reflect.Value{reflect.ValueOf(ctx)})
@@ -185,11 +182,8 @@ func actionWithMethod(target reflect.Value, name string) (ActionFunc, error) {
 
 func updateActionWithMethod(target reflect.Value, name string) (updateActionFunc, error) {
 	m, present, err := resolveMethod(target, name, updateActionFuncType)
-	if err != nil {
+	if !present || err != nil {
 		return nil, err
-	}
-	if !present {
-		return nil, nil
 	}
 	return func(ctx context.Context, prev interface{}) error {
 		prevArg := reflect.ValueOf(prev)

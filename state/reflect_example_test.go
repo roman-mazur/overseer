@@ -87,6 +87,12 @@ func (r *Room) Create(ctx context.Context) error {
 	return nil
 }
 
+func (r *Room) Remove(ctx context.Context) error {
+	// If this method is not defined, Space.Remove will be called twice for a room because of embedding.
+	// An alternative is to mark Space as `state:"-"`, but we do want Space methods to execute.
+	return nil
+}
+
 func ExampleBuildStateItems() {
 	blueSpace := Space{ColorBlue, 1}
 	redSpace := Space{ColorRed, 1}
@@ -136,12 +142,12 @@ func ExampleBuildStateItems() {
 	// Creating space with color blue and size 1.0
 	// Creating room bedroom 1
 	// Creating space with color white and size 2.0
-	// >> From state1 to state0
+	// >> From state1 to state2
 	// Repainting from blue to red
 	// Removing space with color blue and size 1.0
 	// Repainting from white to blue
 	// Resizing from 2 to 1
-	// Creating bedroom 2
+	// Creating room bedroom 2
 	// Creating space with color red and size 1.0
 	// Moving house A from 5 Cherry lane to 5 Bazhana ave.
 }
