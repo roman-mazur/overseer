@@ -108,13 +108,10 @@ func ExampleInferActions() {
 	ctx := context.Background()
 
 	fmt.Println(">> color change")
-	actions := state.InferActions(
+	_ = state.InferActions(
 		[]state.Item{officeRoom.AsState(), livingRoom.AsState()},
 		[]state.Item{officeRoomRecolored.AsState(), livingRoom.AsState()},
-	)
-	for _, act := range actions {
-		_ = act(ctx)
-	}
+	).Do(ctx)
 
 	bedroom := &HouseRoom{
 		Number: 3,
@@ -122,13 +119,10 @@ func ExampleInferActions() {
 	}
 
 	fmt.Println(">> structure change")
-	actions = state.InferActions(
+	_ = state.InferActions(
 		[]state.Item{officeRoom.AsState(), livingRoom.AsState()},
 		[]state.Item{livingRoom.AsState(), bedroom.AsState()},
-	)
-	for _, act := range actions {
-		_ = act(ctx)
-	}
+	).Do(ctx)
 
 	// Output:
 	// >> color change

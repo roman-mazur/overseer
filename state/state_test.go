@@ -135,11 +135,9 @@ func TestInferActions(t *testing.T) {
 		prev := stateItems(tt.args.prev, &performedActions)
 		next := stateItems(tt.args.next, &performedActions)
 		t.Run(tt.name, func(t *testing.T) {
-			actions := InferActions(prev, next)
-			for _, act := range actions {
-				if err := act(context.TODO()); err != nil {
-					t.Fatal(err)
-				}
+			err := InferActions(prev, next).Do(context.TODO())
+			if err != nil {
+				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(performedActions, tt.want) {
 				t.Errorf("actions resulted in %v, want %v", performedActions, tt.want)

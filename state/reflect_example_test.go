@@ -11,9 +11,12 @@ type Color int
 
 func (c Color) String() string {
 	switch c {
-	case ColorWhite: return "white"
-	case ColorRed: return "red"
-	case ColorBlue: return "blue"
+	case ColorWhite:
+		return "white"
+	case ColorRed:
+		return "red"
+	case ColorBlue:
+		return "blue"
 	default:
 		return "unknown"
 	}
@@ -26,7 +29,7 @@ const (
 )
 
 type Space struct {
-	Color Color `state:"Repaint"`
+	Color Color   `state:"Repaint"`
 	Area  float32 `state:"Resize"`
 }
 
@@ -120,16 +123,10 @@ func ExampleBuildStateItems() {
 	ctx := context.Background()
 
 	fmt.Println(">> From empty to state1")
-	actionsCreate := state.InferActions(nil, state1)
-	for _, act := range actionsCreate {
-		_ = act(ctx)
-	}
+	_ = state.InferActions(nil, state1).Do(ctx)
 
 	fmt.Println(">> From state1 to state2")
-	actionsUpdate := state.InferActions(state1, state2)
-	for _, act := range actionsUpdate {
-		_ = act(ctx)
-	}
+	_ = state.InferActions(state1, state2).Do(ctx)
 
 	// Output:
 	// >> From empty to state1

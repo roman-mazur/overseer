@@ -128,14 +128,14 @@ func TestBuildStateItems(t *testing.T) {
 func TestBuildStateItems_IdTag(t *testing.T) {
 	type data struct {
 		Value     int
-		Id string `state:"id"`
+		Id        string `state:"id"`
 		BoolValue bool
 
 		Ignore1 string `state:"-"`
 		ignore2 string
 	}
 
-	items, err := BuildStateItems(&data{ 42, "id1", true, "", ""})
+	items, err := BuildStateItems(&data{42, "id1", true, "", ""})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,16 +242,12 @@ func TestBuildStateItems_StructActions(t *testing.T) {
 	}
 
 	// Create.
-	for _, action := range InferActions(nil, items) {
-		if err := action(context.TODO()); err != nil {
-			t.Fatal(err)
-		}
+	if err := InferActions(nil, items).Do(context.TODO()); err != nil {
+		t.Fatal(err)
 	}
 	// Remove.
-	for _, action := range InferActions(items, nil) {
-		if err := action(context.TODO()); err != nil {
-			t.Fatal(err)
-		}
+	if err := InferActions(items, nil).Do(context.TODO()); err != nil {
+		t.Fatal(err)
 	}
 	// Update.
 	value2 := makeTestStruct(&recording)
@@ -261,10 +257,8 @@ func TestBuildStateItems_StructActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, action := range InferActions(items, items2) {
-		if err := action(context.TODO()); err != nil {
-			t.Fatal(err)
-		}
+	if err := InferActions(items, items2).Do(context.TODO()); err != nil {
+		t.Fatal(err)
 	}
 
 	want := recorder{
@@ -277,6 +271,28 @@ func TestBuildStateItems_StructActions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(recording, want) {
 		t.Errorf("Unexpected actions result: got %s, want %s", recording, want)
+	}
+}
+
+type Inner struct{ *recorder }
+
+func (i Inner) Create(ctx context.Context) error {
+	i.record("create inner")
+	return nil
+}
+
+type outer struct{ Inner }
+
+func TestBuildActionable_Embedded(t *testing.T) {
+	var recording recorder
+	items, err := BuildStateItems(&outer{Inner{&recording}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = InferActions(nil, items).Do(context.TODO())
+	want := recorder{"create inner"}
+	if !reflect.DeepEqual(recording, want) {
+		t.Errorf("Unexpected result: want %s, got %s", want, recording)
 	}
 }
 

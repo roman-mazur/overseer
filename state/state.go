@@ -5,7 +5,15 @@ import (
 	"fmt"
 )
 
-type Action func(ctx context.Context) error
+type Action interface {
+	Do(ctx context.Context) error
+}
+
+type ActionFunc func(ctx context.Context) error
+
+func (af ActionFunc) Do(ctx context.Context) error {
+	return af(ctx)
+}
 
 type Actionable interface {
 	Create(ctx context.Context) error
@@ -24,7 +32,18 @@ type Item interface {
 
 type Set []Item
 
-func InferActions(prev, next Set) []Action {
+type ComposedAction []Action
+
+func (ca ComposedAction) Do(ctx context.Context) error {
+	for _, act := range ca {
+		if err := act.Do(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func InferActions(prev, next Set) Action {
 	nextState := mapState(next)
 
 	removeActions := make([]Action, 0, len(prev))
@@ -34,13 +53,13 @@ func InferActions(prev, next Set) []Action {
 			if !nextItem.IsSame(prevItem) {
 				nextItem := nextItem
 				prevItem := prevItem
-				updateActions = append(updateActions, func(ctx context.Context) error {
+				updateActions = append(updateActions, ActionFunc(func(ctx context.Context) error {
 					return nextItem.Update(ctx, prevItem)
-				})
+				}))
 			}
 			delete(nextState, prevItem.Id())
 		} else {
-			removeActions = append(removeActions, prevItem.Remove)
+			removeActions = append(removeActions, ActionFunc(prevItem.Remove))
 		}
 	}
 
@@ -51,10 +70,10 @@ func InferActions(prev, next Set) []Action {
 	createActions := actions[len(removeActions)+len(updateActions):]
 	i := 0
 	for _, nextItem := range nextState {
-		createActions[i] = nextItem.Create
+		createActions[i] = ActionFunc(nextItem.Create)
 		i++
 	}
-	return actions
+	return ComposedAction(actions)
 }
 
 func mapState(items []Item) map[string]Item {
@@ -85,8 +104,8 @@ func (ssi *StringItem) IsSame(another Item) bool {
 }
 
 type ComposedItem struct {
-	IdValue  ItemId
-	Parts    []Item
+	IdValue ItemId
+	Parts   []Item
 
 	actions  Actionable
 	original interface{}
@@ -172,11 +191,8 @@ func (csi ComposedItem) Update(ctx context.Context, from interface{}) error {
 	if !ok {
 		panic(fmt.Errorf("bad composition: %s is not a ComposedItem", from))
 	}
-	actions := InferActions(fromCsi.Parts, csi.Parts)
-	for _, act := range actions {
-		if err := act(ctx); err != nil {
-			return err
-		}
+	if err := InferActions(fromCsi.Parts, csi.Parts).Do(ctx); err != nil {
+		return err
 	}
 	if csi.actions != nil {
 		prev := from

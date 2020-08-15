@@ -9,7 +9,7 @@ func TestBuildStateItems_Rooms(t *testing.T) {
 	blueSpace := Space{ColorBlue, 1}
 	redSpace := Space{ColorRed, 1}
 
-	testState, _ := state.BuildStateItems(struct{Rooms []*Room}{Rooms: []*Room{
+	testState, _ := state.BuildStateItems(struct{ Rooms []*Room }{Rooms: []*Room{
 		{Name: "bedroom 1", Space: blueSpace},
 		{Name: "bedroom 2", Space: redSpace},
 	}})

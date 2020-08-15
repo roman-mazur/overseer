@@ -23,7 +23,7 @@ func (sid StringId) String() string {
 // It represents a node of the state structure tree.
 type valueId struct {
 	// Structure tree references.
-	parent *valueId
+	parent   *valueId
 	children []*valueId
 
 	// If the related item is inside some list (slice or array).

@@ -11,7 +11,7 @@ type valueStateItem struct {
 
 	valueId *valueId
 	value   reflect.Value
-	parent *valueStateItem
+	parent  *valueStateItem
 }
 
 func (vsi valueStateItem) String() string {
@@ -57,7 +57,7 @@ func BuildStateItems(input interface{}) ([]Item, error) {
 }
 
 type fieldContext struct {
-	field *reflect.StructField
+	field  *reflect.StructField
 	target *reflect.Value
 }
 
@@ -164,11 +164,11 @@ func structActionable(v reflect.Value, origValue reflect.Value, fctx *fieldConte
 type actions struct {
 	wrapped Actionable
 
-	create, remove Action
+	create, remove       ActionFunc
 	update, parentUpdate UpdateAction
 }
 
-func callAction(a Action, ctx context.Context) error {
+func callAction(a ActionFunc, ctx context.Context) error {
 	if a != nil {
 		return a(ctx)
 	}
@@ -216,15 +216,14 @@ func (a actions) isWrapperOnly() bool {
 	return a.create == nil && a.remove == nil && a.update == nil && a.parentUpdate == nil && a.wrapped != nil
 }
 
-var actionType = reflect.TypeOf(Action(nil))
+var actionType = reflect.TypeOf(ActionFunc(nil))
 var updateActionType = reflect.TypeOf(UpdateAction(nil))
 
-func actionWithMethod(target reflect.Value, name string) (Action, error) {
+func actionWithMethod(target reflect.Value, name string) (ActionFunc, error) {
 	m := target.MethodByName(name)
 	if m.Kind() == reflect.Invalid {
 		return nil, nil
 	}
-	m.Recv()
 	t := m.Type()
 	if t.NumIn() != actionType.NumIn() || t.In(0) != actionType.In(0) {
 		return nil, fmt.Errorf("bad action method signature %v: 1 parameter expected of type context.Context", m)
