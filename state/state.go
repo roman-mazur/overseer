@@ -5,24 +5,6 @@ import (
 	"fmt"
 )
 
-type Action interface {
-	Do(ctx context.Context) error
-}
-
-type ActionFunc func(ctx context.Context) error
-
-func (af ActionFunc) Do(ctx context.Context) error {
-	return af(ctx)
-}
-
-type Actionable interface {
-	Create(ctx context.Context) error
-	Remove(ctx context.Context) error
-	Update(ctx context.Context, from interface{}) error
-}
-
-type UpdateAction func(ctx context.Context, prev interface{}) error
-
 type Item interface {
 	Actionable
 

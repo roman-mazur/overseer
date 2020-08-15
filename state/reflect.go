@@ -30,16 +30,6 @@ func (vsi valueStateItem) IsSame(other Item) bool {
 	}
 }
 
-type noAction struct{}
-
-func (na noAction) Create(context.Context) error              { return nil }
-func (na noAction) Remove(context.Context) error              { return nil }
-func (na noAction) Update(context.Context, interface{}) error { return nil }
-
-var (
-	noop Actionable = noAction{}
-)
-
 // BuildStateItems creates a state representation fom the input struct or slice.
 func BuildStateItems(input interface{}) ([]Item, error) {
 	v := reflect.ValueOf(input)
@@ -161,72 +151,28 @@ func structActionable(v reflect.Value, origValue reflect.Value, fctx *fieldConte
 	return act, nil
 }
 
-type actions struct {
-	wrapped Actionable
+var actionFuncType = reflect.TypeOf(ActionFunc(nil))
+var updateActionFuncType = reflect.TypeOf(updateActionFunc(nil))
 
-	create, remove       ActionFunc
-	update, parentUpdate UpdateAction
-}
-
-func callAction(a ActionFunc, ctx context.Context) error {
-	if a != nil {
-		return a(ctx)
-	}
-	return nil
-}
-
-func (a actions) Create(ctx context.Context) error {
-	if err := callAction(a.create, ctx); err != nil {
-		return err
-	}
-	if a.wrapped != nil {
-		return a.wrapped.Create(ctx)
-	}
-	return nil
-}
-func (a actions) Remove(ctx context.Context) error {
-	if a.wrapped != nil {
-		if err := a.wrapped.Remove(ctx); err != nil {
-			return err
-		}
-	}
-	return callAction(a.remove, ctx)
-}
-func (a actions) Update(ctx context.Context, prev interface{}) error {
-	if a.update != nil {
-		if err := a.update(ctx, prev); err != nil {
-			return err
-		}
-	}
-	if a.parentUpdate != nil {
-		if err := a.parentUpdate(ctx, prev); err != nil {
-			return err
-		}
-	}
-	if a.wrapped != nil {
-		return a.wrapped.Update(ctx, prev)
-	}
-	return nil
-}
-
-func (a actions) isNoop() bool {
-	return a.create == nil && a.remove == nil && a.update == nil && a.wrapped == nil && a.parentUpdate == nil
-}
-func (a actions) isWrapperOnly() bool {
-	return a.create == nil && a.remove == nil && a.update == nil && a.parentUpdate == nil && a.wrapped != nil
-}
-
-var actionType = reflect.TypeOf(ActionFunc(nil))
-var updateActionType = reflect.TypeOf(UpdateAction(nil))
-
-func actionWithMethod(target reflect.Value, name string) (ActionFunc, error) {
+func resolveMethod(target reflect.Value, name string, methodType reflect.Type) (reflect.Value, bool, error) {
 	m := target.MethodByName(name)
 	if m.Kind() == reflect.Invalid {
-		return nil, nil
+		return m, false, nil
 	}
 	t := m.Type()
-	if t.NumIn() != actionType.NumIn() || t.In(0) != actionType.In(0) {
-		return nil, fmt.Errorf("bad action method signature %v: 1 parameter expected of type context.Context", m)
+	if t.NumIn() != methodType.NumIn() || t.In(0) != methodType.In(0) {
+		return m, true, fmt.Errorf("bad action method signature %s, expected %s", t, methodType)
+	}
+	return m, true, nil
+}
+
+func actionWithMethod(target reflect.Value, name string) (ActionFunc, error) {
+	m, present, err := resolveMethod(target, name, actionFuncType)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, nil
 	}
 	return func(ctx context.Context) error {
 		res := m.Call([]reflect.Value{reflect.ValueOf(ctx)})
@@ -237,31 +183,18 @@ func actionWithMethod(target reflect.Value, name string) (ActionFunc, error) {
 	}, nil
 }
 
-func updateActionWithMethod(target reflect.Value, name string, fieldIndex []int) (UpdateAction, error) {
-	m := target.MethodByName(name)
-	if m.Kind() == reflect.Invalid {
-		return nil, nil
+func updateActionWithMethod(target reflect.Value, name string) (updateActionFunc, error) {
+	m, present, err := resolveMethod(target, name, updateActionFuncType)
+	if err != nil {
+		return nil, err
 	}
-	t := m.Type()
-	if t.NumIn() != updateActionType.NumIn() || t.In(0) != updateActionType.In(0) {
-		return nil, fmt.Errorf("bad action method signature %s %#v on %s: 2 parameters expected, first must be context.Context",
-			name, m, target.Type())
+	if !present {
+		return nil, nil
 	}
 	return func(ctx context.Context, prev interface{}) error {
 		prevArg := reflect.ValueOf(prev)
 		if vsi, ok := prev.(valueStateItem); ok {
 			prevArg = vsi.value
-		}
-		if len(fieldIndex) > 0 {
-			// TODO: remove this code.
-			structValue := prevArg
-			if structValue.Kind() == reflect.Ptr {
-				structValue = structValue.Elem()
-			}
-			if structValue.Kind() != reflect.Struct {
-				panic("state: inconsistency in method calls, got " + structValue.Type().String() + "instead of a struct")
-			}
-			prevArg = structValue.FieldByIndex(fieldIndex)
 		}
 		res := m.Call([]reflect.Value{reflect.ValueOf(ctx), prevArg})
 		if res[0].IsNil() {
@@ -297,7 +230,7 @@ func buildActionable(target reflect.Value, fctx *fieldContext) (Actionable, erro
 			if res.remove, err = actionWithMethod(target, "Remove"); err != nil {
 				return nil, err
 			}
-			if res.update, err = updateActionWithMethod(target, "Update", nil); err != nil {
+			if res.update, err = updateActionWithMethod(target, "Update"); err != nil {
 				return nil, err
 			}
 		}
@@ -312,7 +245,7 @@ func buildActionable(target reflect.Value, fctx *fieldContext) (Actionable, erro
 	}
 
 	if parentUpdateMethod != "" {
-		res.parentUpdate, err = updateActionWithMethod(*fctx.target, parentUpdateMethod, nil)
+		res.parentUpdate, err = updateActionWithMethod(*fctx.target, parentUpdateMethod)
 	}
 
 	if res.isWrapperOnly() {
